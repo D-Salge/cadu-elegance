@@ -1,0 +1,342 @@
+{% extends 'core/base.html' %}
+
+{% block title %}Agendamento - Cadu Elegance{% endblock %}
+
+{% block scripts %}
+    <script src="https://unpkg.com/imask"></script>
+    <script>
+        // O nosso código JS de agendamento vem aqui
+        document.addEventListener('DOMContentLoaded', () => {
+            // 1. Pegar todos os elementos do HTML
+            const container = document.querySelector('.container-main'); // Mudamos o seletor
+            const csrfToken = document.querySelector('input[name="csrfmiddlewaretoken"]').value;
+            const barberSelect = document.getElementById('barber-select');
+            const dateCarousel = document.getElementById('date-carousel'); 
+            const serviceSelect = document.getElementById('service-select');
+            
+            const serviceStep = document.getElementById('service-step');
+            const dateStep = document.getElementById('date-step');
+            const slotsStep = document.getElementById('slots-step');
+            const formStep = document.getElementById('form-step');
+
+            const slotsContainer = document.getElementById('slots-container');
+            const slotsLoading = document.getElementById('slots-loading');
+            const slotsError = document.getElementById('slots-error');
+
+            const clientNameInput = document.getElementById('client-name');
+            const clientPhoneInput = document.getElementById('client-phone');
+            
+            // --- Ativa a Máscara ---
+            const phoneMaskOptions = {
+                mask: [
+                    { mask: '(00) 0000-0000' },
+                    { mask: '(00) 00000-0000' }
+                ]
+            };
+            const phoneMask = IMask(clientPhoneInput, phoneMaskOptions);
+            // --- Fim da Máscara ---
+
+            const submitButton = document.getElementById('submit-button');
+            const submitLoading = document.getElementById('submit-loading');
+            const submitError = document.getElementById('submit-error');
+            const submitSuccess = document.getElementById('submit-success');
+            
+            const GET_SLOTS_URL = container.dataset.getSlotsUrl;
+            const CREATE_APPOINTMENT_URL = container.dataset.createAppointmentUrl;
+            
+            let selectedBarberId = null;
+            let selectedServiceId = null;
+            let selectedDate = null;
+            let selectedSlotTime = null;
+
+            // --- EVENTOS ---
+            barberSelect.addEventListener('change', () => {
+                selectedBarberId = barberSelect.value;
+                resetSteps(1);
+                if (selectedBarberId) {
+                    serviceStep.classList.remove('d-none');
+                }
+            });
+
+            serviceSelect.addEventListener('change', () => {
+                selectedServiceId = serviceSelect.value;
+                resetSteps(2);
+                if (selectedServiceId) {
+                    generateDateCarousel();
+                    dateStep.classList.remove('d-none');
+                }
+            });
+            
+            submitButton.addEventListener('click', submitAppointment);
+
+            // --- Gerar Carrossel ---
+            function generateDateCarousel() {
+                dateCarousel.innerHTML = '';
+                const today = new Date();
+                const daysToShow = 14; 
+
+                for (let i = 0; i < daysToShow; i++) {
+                    const date = new Date(today);
+                    date.setDate(today.getDate() + i);
+                    const dateSlot = document.createElement('div');
+                    dateSlot.classList.add('date-slot'); 
+                    dateSlot.dataset.date = dateToYYYYMMDD(date); 
+                    const weekday = date.toLocaleDateString('pt-BR', { weekday: 'short' });
+                    const dayMonth = date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+                    dateSlot.innerHTML = `<div class="weekday">${weekday.replace('.', '')}</div><div class="day">${dayMonth}</div>`;
+                    dateSlot.addEventListener('click', handleDateClick);
+                    dateCarousel.appendChild(dateSlot);
+                }
+            }
+
+            // --- Clique na Data ---
+            function handleDateClick(event) {
+                const clickedSlot = event.currentTarget;
+                resetSteps(3);
+                document.querySelectorAll('.date-slot').forEach(s => s.classList.remove('selected'));
+                clickedSlot.classList.add('selected');
+                selectedDate = clickedSlot.dataset.date;
+                if (selectedDate) {
+                    fetchAvailableSlots();
+                }
+            }
+
+            // --- Buscar Slots (API GET) ---
+            async function fetchAvailableSlots() {
+                slotsStep.classList.remove('d-none');
+                slotsLoading.classList.remove('d-none');
+                slotsError.classList.add('d-none');
+                slotsContainer.innerHTML = ''; 
+                const url = `${GET_SLOTS_URL}?barber_id=${selectedBarberId}&service_id=${selectedServiceId}&date=${selectedDate}`;
+
+                try {
+                    const response = await fetch(url);
+                    if (!response.ok) {
+                        const errorData = await response.json();
+                        throw new Error(errorData.error || 'Não foi possível buscar os horários.');
+                    }
+                    const data = await response.json();
+                    slotsLoading.classList.add('d-none');
+                    if (data.available_slots.length === 0) {
+                        slotsError.textContent = 'Nenhum horário livre para este dia. Tente outra data.';
+                        slotsError.classList.remove('d-none');
+                        return;
+                    }
+                    data.available_slots.forEach(slotTime => {
+                        // MUDANÇA: Usando classes do Bootstrap para os botões
+                        const slotElement = document.createElement('button');
+                        slotElement.classList.add('btn', 'btn-outline-primary', 'slot-btn');
+                        slotElement.textContent = slotTime;
+                        slotElement.dataset.time = slotTime; 
+                        slotElement.addEventListener('click', handleSlotClick);
+                        slotsContainer.appendChild(slotElement);
+                    });
+                } catch (error) {
+                    slotsLoading.classList.add('d-none');
+                    slotsError.textContent = error.message;
+                    slotsError.classList.remove('d-none');
+                }
+            }
+
+            // --- Clique no Slot ---
+            function handleSlotClick(event) {
+                document.querySelectorAll('.slot-btn').forEach(s => s.classList.remove('active'));
+                const clickedSlot = event.target;
+                clickedSlot.classList.add('active');
+                selectedSlotTime = clickedSlot.dataset.time;
+                formStep.classList.remove('d-none');
+            }
+
+            // --- Enviar Agendamento (API POST) ---
+            async function submitAppointment() {
+                submitLoading.classList.remove('d-none');
+                submitError.classList.add('d-none');
+                submitSuccess.classList.add('d-none');
+                submitButton.disabled = true;
+
+                const clientName = clientNameInput.value;
+                const clientPhone = phoneMask.unmaskedValue; // Pega o valor limpo (só números)
+                const startDateTime = `${selectedDate}T${selectedSlotTime}`;
+                
+                const appointmentData = {
+                    barber_id: parseInt(selectedBarberId),
+                    service_id: parseInt(selectedServiceId),
+                    start_datetime: startDateTime,
+                    client_name: clientName,
+                    client_phone: clientPhone
+                };
+
+                try {
+                    const response = await fetch(CREATE_APPOINTMENT_URL, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRFToken': csrfToken
+                        },
+                        body: JSON.stringify(appointmentData)
+                    });
+                    if (!response.ok) {
+                        const errorData = await response.json();
+                        const errorMsg = errorData.non_field_errors || errorData.start_datetime || errorData.detail || 'Erro desconhecido.';
+                        throw new Error(Array.isArray(errorMsg) ? errorMsg[0] : errorMsg);
+                    }
+                    const newAppointment = await response.json();
+                    window.location.href = `/agendamento/sucesso/${newAppointment.id}/`;
+                } catch (error) {
+                    submitLoading.classList.add('d-none');
+                    submitError.textContent = `Erro: ${error.message}`;
+                    submitError.classList.remove('d-none');
+                } finally {
+                    submitButton.disabled = false;
+                }
+            }
+            
+            // --- Resetar Passos ---
+            function resetSteps(fromStep) {
+                // (Usando d-none do Bootstrap)
+                if (fromStep <= 0) {
+                    barberSelect.value = '';
+                    serviceStep.classList.add('d-none');
+                }
+                if (fromStep <= 1) {
+                    serviceSelect.value = '';
+                    dateStep.classList.add('d-none');
+                }
+                if (fromStep <= 2) {
+                    dateCarousel.innerHTML = '';
+                    selectedDate = null;
+                    slotsStep.classList.add('d-none');
+                }
+                if (fromStep <= 3) {
+                    slotsContainer.innerHTML = '';
+                    slotsError.classList.add('d-none');
+                    slotsLoading.classList.add('d-none');
+                    formStep.classList.add('d-none');
+                    selectedSlotTime = null;
+                }
+                if (fromStep <= 4) {
+                    clientNameInput.value = '';
+                    clientPhoneInput.value = '';
+                    submitError.classList.add('d-none');
+                    submitSuccess.classList.add('d-none');
+                }
+            }
+
+            // --- Utilitários ---
+            function dateToYYYYMMDD(date) {
+                const year = date.getFullYear();
+                const month = String(date.getMonth() + 1).padStart(2, '0');
+                const day = String(date.getDate()).padStart(2, '0');
+                return `${year}-${month}-${day}`;
+            }
+        });
+    </script>
+{% endblock %}
+
+
+{% block content %}
+<div class="col-md-8 col-lg-6 mx-auto">
+    <div class="card shadow-sm container-main"
+         data-get-slots-url="{% url 'core:get_available_slots' %}"
+         data-create-appointment-url="{% url 'core:create_appointment' %}">
+        
+        <div class="card-body">
+            <h1 class="card-title h3 mb-4 text-center">Faça seu Agendamento</h1>
+            
+            <div class="step mb-3">
+                <label for="barber-select" class="form-label">1. Escolha o Profissional:</label>
+                <select id="barber-select" class="form-select form-select-lg">
+                    <option value="">Selecione...</option>
+                    {% for barber in barbers %}
+                        <option value="{{ barber.id }}">{{ barber.nome_exibicao }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="step mb-3 d-none" id="service-step">
+                <label for="service-select" class="form-label">2. Escolha o Serviço:</label>
+                <select id="service-select" class="form-select form-select-lg">
+                    <option value="">Selecione...</option>
+                    {% for service in services %}
+                        <option value="{{ service.id }}" data-duration="{{ service.duracao }}">
+                            {{ service.nome }} ({{ service.friendly_duration }})
+                        </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="step mb-3 d-none" id="date-step">
+                <label class="form-label">3. Escolha o Dia:</label>
+                <div class="date-carousel-container">
+                    <div class="date-carousel" id="date-carousel">
+                        </div>
+                </div>
+            </div>
+
+            <div class="step mb-3 d-none" id="slots-step">
+                <label class="form-label">4. Escolha o Horário:</label>
+                <div class="alert alert-info d-none" id="slots-loading">Buscando horários...</div>
+                <div class="alert alert-warning d-none" id="slots-error"></div>
+                <div class="d-flex flex-wrap gap-2" id="slots-container">
+                    </div>
+            </div>
+            
+            <div class="step d-none" id="form-step">
+                {% csrf_token %}
+                <hr class="my-4">
+                <h3 class="h5 mb-3">Preencha seus dados</h3>
+                <div class="mb-3">
+                    <label for="client-name" class="form-label">Seu Nome:</label>
+                    <input type="text" id="client-name" class="form-control" placeholder="Digite seu nome completo">
+                </div>
+                <div class="mb-3">
+                    <label for="client-phone" class="form-label">Seu WhatsApp:</label>
+                    <input type="tel" inputmode="numeric" id="client-phone" class="form-control" placeholder="(XX) XXXXX-XXXX">
+                </div>
+                
+                <button type="button" id="submit-button" class="btn btn-success btn-lg w-100 mt-3">
+                    Confirmar Agendamento
+                </button>
+                <div class="alert alert-info mt-3 d-none" id="submit-loading">Enviando...</div>
+                <div class="alert alert-danger mt-3 d-none" id="submit-error"></div>
+                <div class="alert alert-success mt-3 d-none" id="submit-success">
+                    Agendamento realizado com sucesso!
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    /* Estilos para o Carrossel de Datas */
+    .date-carousel-container {
+        overflow-x: auto;
+        white-space: nowrap;
+        padding-bottom: 10px;
+        -webkit-overflow-scrolling: touch;
+    }
+    .date-carousel { display: inline-block; }
+    .date-slot {
+        display: inline-block;
+        text-align: center;
+        padding: 10px;
+        margin-right: 10px;
+        border: 1px solid #ccc;
+        border-radius: 8px;
+        cursor: pointer;
+        min-width: 70px;
+        user-select: none;
+    }
+    .date-slot .weekday {
+        font-size: 0.8em;
+        font-weight: bold;
+        text-transform: uppercase;
+    }
+    .date-slot .day { font-size: 1.1em; }
+    .date-slot.selected {
+        background-color: var(--bs-primary);
+        color: white;
+        border-color: var(--bs-primary);
+    }
+</style>
+{% endblock %}

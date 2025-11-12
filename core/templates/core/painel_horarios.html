@@ -1,0 +1,126 @@
+{% extends 'core/base.html' %}
+
+{% block title %}Painel de Controle{% endblock %}
+
+{% block content %}
+<div class="row">
+
+    <div class="col-lg-7 mb-4">
+        <div class="card shadow-sm">
+            <div class="card-header bg-dark text-white">
+                <h2 class="h5 mb-0">Próximos Agendamentos</h2>
+            </div>
+            <div class="card-body">
+                {% if proximos_agendamentos %}
+                    <div class="list-group">
+                        {% for appt in proximos_agendamentos %}
+                            <div class="list-group-item list-group-item-action flex-column align-items-start mb-2 border-start-4 {% if appt.status == 'pendente' %}border-warning{% else %}border-success{% endif %}">
+                                <div class="d-flex w-100 justify-content-between">
+                                    <h5 class="mb-1">
+                                        {{ appt.cliente_nome }}
+                                    </h5>
+                                    <small>
+                                        {{ appt.data_hora_inicio|date:"d/m, D" }}
+                                    </small>
+                                </div>
+                                <p class="mb-1">
+                                    <strong>Serviço:</strong> {{ appt.barber_service.service.nome }} ({{ appt.barber_service.service.friendly_duration }})
+                                    <br>
+                                    <strong>Horário:</strong> {{ appt.data_hora_inicio|time:"H:i" }} - {{ appt.data_hora_fim|time:"H:i" }}
+                                    <br>
+                                    <strong>Telefone:</strong> {{ appt.cliente_telefone }}
+                                </p>
+                                <div class="d-flex w-100 justify-content-between align-items-center">
+                                    <span class="badge {% if appt.status == 'pendente' %}bg-warning text-dark{% else %}bg-success{% endif %}">
+                                        {{ appt.get_status_display }}
+                                    </span>
+                                    
+                                    <div class="text-end">
+                                        {% if appt.status == 'pendente' %}
+                                            <form method="POST" action="{% url 'core:confirm_appointment' appt.pk %}" class="d-inline">
+                                                {% csrf_token %}
+                                                <button type="submit" class="btn btn-sm btn-success">Confirmar</button>
+                                            </form>
+                                        {% endif %}
+                                        
+                                        {% if appt.status != 'cancelado' %}
+                                            <form method="POST" action="{% url 'core:cancel_appointment' appt.pk %}" class="d-inline">
+                                                {% csrf_token %}
+                                                <button type="submit" onclick="return confirm('Tem certeza?');" class="btn btn-sm btn-danger">Cancelar</button>
+                                            </form>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                            </div>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <div class="alert alert-info">Nenhum agendamento futuro encontrado.</div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-5 mb-4">
+        <div class="card shadow-sm mb-4">
+            <div class="card-header bg-dark text-white">
+                <h2 class="h5 mb-0">Adicionar Bloco de Trabalho</h2>
+            </div>
+            <div class="card-body">
+                <form method="POST" action="">
+                    {% csrf_token %}
+                    <div class="mb-2">
+                        <label for="{{ form.dia_da_semana.id_for_label }}" class="form-label">{{ form.dia_da_semana.label }}</label>
+                        {{ form.dia_da_semana.errors }}
+                        <select name="{{ form.dia_da_semana.name }}" id="{{ form.dia_da_semana.id_for_label }}" class="form-select">
+                            {% for value, text in form.dia_da_semana.field.choices %}
+                                <option value="{{ value }}">{{ text }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="row">
+                        <div class="col-6 mb-2">
+                            <label for="{{ form.hora_inicio.id_for_label }}" class="form-label">{{ form.hora_inicio.label }}</label>
+                            {{ form.hora_inicio.errors }}
+                            <input type="time" name="{{ form.hora_inicio.name }}" id="{{ form.hora_inicio.id_for_label }}" class="form-control" step="900">
+                        </div>
+                        <div class="col-6 mb-2">
+                            <label for="{{ form.hora_fim.id_for_label }}" class="form-label">{{ form.hora_fim.label }}</label>
+                            {{ form.hora_fim.errors }}
+                            <input type="time" name="{{ form.hora_fim.name }}" id="{{ form.hora_fim.id_for_label }}" class="form-control" step="900">
+                        </div>
+                    </div>
+                    <button type="submit" class="btn btn-primary w-100 mt-2">Adicionar Horário</button>
+                </form>
+            </div>
+        </div>
+
+        <div class="card shadow-sm">
+            <div class="card-header bg-dark text-white">
+                <h2 class="h5 mb-0">Meus Blocos Atuais</h2>
+            </div>
+            <div class="card-body">
+                {% if meus_horarios %}
+                    <ul class="list-group list-group-flush">
+                        {% for horario in meus_horarios %}
+                            <li class="list-group-item d-flex justify-content-between align-items-center">
+                                <div>
+                                    <strong>{{ horario.get_dia_da_semana_display }}:</strong>
+                                    {{ horario.hora_inicio|time:"H:i" }} - {{ horario.hora_fim|time:"H:i" }}
+                                </div>
+                                <form method="POST" action="{% url 'core:delete_availability' horario.pk %}">
+                                    {% csrf_token %}
+                                    <button type="submit" onclick="return confirm('Tem certeza?');" class="btn btn-sm btn-outline-danger">X</button>
+                                </form>
+                            </li>
+                        {% endfor %}
+                    </ul>
+                {% else %}
+                    <div class="alert alert-secondary">Nenhum bloco de horário cadastrado.</div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+</div>
+{% endblock %}

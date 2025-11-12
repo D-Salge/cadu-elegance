@@ -1,0 +1,34 @@
+# Django-specific files
+*.log
+*.pot
+*.pyc
+__pycache__/
+local_settings.py
+db.sqlite3  # If using SQLite
+media/      # User-uploaded media files
+static/     # Collected static files (if serving directly)
+
+# Virtual Environment
+.env
+venv/
+env/
+
+# IDE and Editor settings
+.vscode/    # Visual Studio Code settings
+.idea/      # PyCharm settings
+*.swp       # Vim swap files
+*~          # Emacs backup files
+
+# Operating System files
+.DS_Store
+Thumbs.db
+
+# Testing and Coverage reports
+.coverage
+htmlcov/
+.tox/
+.pytest_cache/
+
+# Deployment files
+*.tar.gz
+*.zip
