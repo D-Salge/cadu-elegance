@@ -62,6 +62,7 @@
     </div>
 
     <div class="col-lg-5 mb-4">
+        
         <div class="card shadow-sm mb-4">
             <div class="card-header bg-dark text-white">
                 <h2 class="h5 mb-0">Adicionar Bloco de Trabalho</h2>
@@ -70,40 +71,71 @@
                 <form method="POST" action="">
                     {% csrf_token %}
                     <div class="mb-2">
-                        <label for="{{ form.dia_da_semana.id_for_label }}" class="form-label">{{ form.dia_da_semana.label }}</label>
-                        {{ form.dia_da_semana.errors }}
-                        <select name="{{ form.dia_da_semana.name }}" id="{{ form.dia_da_semana.id_for_label }}" class="form-select">
-                            {% for value, text in form.dia_da_semana.field.choices %}
+                        <label for="{{ availability_form.dia_da_semana.id_for_label }}" class="form-label">{{ availability_form.dia_da_semana.label }}</label>
+                        {{ availability_form.dia_da_semana.errors }}
+                        <select name="{{ availability_form.dia_da_semana.name }}" id="{{ availability_form.dia_da_semana.id_for_label }}" class="form-select {% if availability_form.dia_da_semana.errors %}is-invalid{% endif %}">
+                            {% for value, text in availability_form.dia_da_semana.field.choices %}
                                 <option value="{{ value }}">{{ text }}</option>
                             {% endfor %}
                         </select>
                     </div>
                     <div class="row">
                         <div class="col-6 mb-2">
-                            <label for="{{ form.hora_inicio.id_for_label }}" class="form-label">{{ form.hora_inicio.label }}</label>
-                            {{ form.hora_inicio.errors }}
-                            <input type="time" name="{{ form.hora_inicio.name }}" id="{{ form.hora_inicio.id_for_label }}" class="form-control" step="900">
+                            <label for="{{ availability_form.hora_inicio.id_for_label }}" class="form-label">{{ availability_form.hora_inicio.label }}</label>
+                            {{ availability_form.hora_inicio.errors }}
+                            <input type="time" name="{{ availability_form.hora_inicio.name }}" id="{{ availability_form.hora_inicio.id_for_label }}" class="form-control {% if availability_form.hora_inicio.errors %}is-invalid{% endif %}" step="900">
                         </div>
                         <div class="col-6 mb-2">
-                            <label for="{{ form.hora_fim.id_for_label }}" class="form-label">{{ form.hora_fim.label }}</label>
-                            {{ form.hora_fim.errors }}
-                            <input type="time" name="{{ form.hora_fim.name }}" id="{{ form.hora_fim.id_for_label }}" class="form-control" step="900">
+                            <label for="{{ availability_form.hora_fim.id_for_label }}" class="form-label">{{ availability_form.hora_fim.label }}</label>
+                            {{ availability_form.hora_fim.errors }}
+                            <input type="time" name="{{ availability_form.hora_fim.name }}" id="{{ availability_form.hora_fim.id_for_label }}" class="form-control {% if availability_form.hora_fim.errors %}is-invalid{% endif %}" step="900">
                         </div>
                     </div>
-                    <button type="submit" class="btn btn-primary w-100 mt-2">Adicionar Horário</button>
+                    <button type="submit" name="submit_availability" class="btn btn-primary w-100 mt-2">Adicionar Horário</button>
+                </form>
+            </div>
+        </div>
+
+        <div class="card shadow-sm mb-4">
+            <div class="card-header bg-secondary text-white">
+                <h2 class="h5 mb-0">Adicionar Folga / Férias</h2>
+            </div>
+            <div class="card-body">
+                <form method="POST" action="">
+                    {% csrf_token %}
+                    <div class="row">
+                        <div class="col-6 mb-2">
+                            <label for="{{ bloqueio_form.data_inicio.id_for_label }}" class="form-label">{{ bloqueio_form.data_inicio.label }}</label>
+                            {{ bloqueio_form.data_inicio.errors }}
+                            <input type="date" name="{{ bloqueio_form.data_inicio.name }}" id="{{ bloqueio_form.data_inicio.id_for_label }}" class="form-control {% if bloqueio_form.data_inicio.errors %}is-invalid{% endif %}">
+                        </div>
+                        <div class="col-6 mb-2">
+                            <label for="{{ bloqueio_form.data_fim.id_for_label }}" class="form-label">{{ bloqueio_form.data_fim.label }}</label>
+                            {{ bloqueio_form.data_fim.errors }}
+                            <input type="date" name="{{ bloqueio_form.data_fim.name }}" id="{{ bloqueio_form.data_fim.id_for_label }}" class="form-control {% if bloqueio_form.data_fim.errors %}is-invalid{% endif %}">
+                        </div>
+                    </div>
+                    <div class="mb-2">
+                        <label for="{{ bloqueio_form.motivo.id_for_label }}" class="form-label">{{ bloqueio_form.motivo.label }}</label>
+                        {{ bloqueio_form.motivo.errors }}
+                        <input type="text" name="{{ bloqueio_form.motivo.name }}" id="{{ bloqueio_form.motivo.id_for_label }}" class="form-control {% if bloqueio_form.motivo.errors %}is-invalid{% endif %}" placeholder="Ex: Férias">
+                    </div>
+                    <button type="submit" name="submit_bloqueio" class="btn btn-secondary w-100 mt-2">Salvar Folga</button>
                 </form>
             </div>
         </div>
 
         <div class="card shadow-sm">
             <div class="card-header bg-dark text-white">
-                <h2 class="h5 mb-0">Meus Blocos Atuais</h2>
+                <h2 class="h5 mb-0">Minha Agenda Programada</h2>
             </div>
             <div class="card-body">
+                
+                <h6 class="text-muted">HORÁRIOS DE TRABALHO (semanal)</h6>
                 {% if meus_horarios %}
-                    <ul class="list-group list-group-flush">
+                    <ul class="list-group list-group-flush mb-3">
                         {% for horario in meus_horarios %}
-                            <li class="list-group-item d-flex justify-content-between align-items-center">
+                            <li class="list-group-item d-flex justify-content-between align-items-center ps-0">
                                 <div>
                                     <strong>{{ horario.get_dia_da_semana_display }}:</strong>
                                     {{ horario.hora_inicio|time:"H:i" }} - {{ horario.hora_fim|time:"H:i" }}
@@ -116,11 +148,34 @@
                         {% endfor %}
                     </ul>
                 {% else %}
-                    <div class="alert alert-secondary">Nenhum bloco de horário cadastrado.</div>
+                    <div class="alert alert-secondary p-2">Nenhum bloco de horário cadastrado.</div>
+                {% endif %}
+
+                <h6 class="text-muted mt-3">FOLGAS E FÉRIAS (datas)</h6>
+                {% if minhas_folgas %}
+                    <ul class="list-group list-group-flush">
+                        {% for folga in minhas_folgas %}
+                            <li class="list-group-item d-flex justify-content-between align-items-center ps-0">
+                                <div>
+                                    {% if folga.data_inicio == folga.data_fim %}
+                                        <strong>{{ folga.data_inicio|date:"d/m/Y" }}</strong>
+                                    {% else %}
+                                        <strong>{{ folga.data_inicio|date:"d/m" }}</strong> até <strong>{{ folga.data_fim|date:"d/m/Y" }}</strong>
+                                    {% endif %}
+                                    <small class="d-block text-muted">{{ folga.motivo|default:"" }}</small>
+                                </div>
+                                <form method="POST" action="{% url 'core:delete_bloqueio' folga.pk %}">
+                                    {% csrf_token %}
+                                    <button type="submit" onclick="return confirm('Tem certeza?');" class="btn btn-sm btn-outline-danger">X</button>
+                                </form>
+                            </li>
+                        {% endfor %}
+                    </ul>
+                {% else %}
+                     <div class="alert alert-secondary p-2">Nenhuma folga futura programada.</div>
                 {% endif %}
             </div>
         </div>
     </div>
-
 </div>
 {% endblock %}

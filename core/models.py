@@ -1,6 +1,7 @@
 from django.db import models
 from django.contrib.auth.models import AbstractUser
 from django.conf import settings
+from django.core.exceptions import ValidationError
 import re
 
 # --- Model 1: Usuário Customizado ---
@@ -51,8 +52,18 @@ class BarberProfile(models.Model):
         related_name='barber_profile'
     )
     nome_exibicao = models.CharField('Nome de Exibição', max_length=100)
-    telefone_whatsapp = models.CharField('WhatsApp', max_length=20) # Ex: (34) 99868-6361
+    telefone_whatsapp = models.CharField('WhatsApp', max_length=20)
     bio = models.TextField(blank=True, null=True)
+    
+    # --- ESTE É O CAMPO CORRETO ---
+    profile_picture = models.ImageField(
+        upload_to='barber_photos/',  # Pasta dentro do S3
+        blank=True,  # <-- 1. ADICIONE ESTA LINHA DE VOLTA
+        null=True,
+        verbose_name="Foto de Perfil"
+    )
+    # --- FIM ---
+    
     servicos_oferecidos = models.ManyToManyField(
         Service,
         through='BarberService',
@@ -159,10 +170,35 @@ class Appointment(models.Model):
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pendente')
 
     class Meta:
-        unique_together = ('barber', 'data_hora_inicio')
         ordering = ['data_hora_inicio']
 
     def __str__(self):
         if self.barber_service:
             return f"{self.cliente_nome} com {self.barber_service.barber.nome_exibicao} ({self.barber_service.service.nome})"
         return f"{self.cliente_nome} (Serviço Indefinido)"
+    
+# --- Model 7: Bloqueio de Datas (Férias/Folgas) ---
+class Bloqueio(models.Model):
+    barber = models.ForeignKey(
+        BarberProfile, 
+        on_delete=models.CASCADE, 
+        related_name='bloqueios'
+    )
+    data_inicio = models.DateField('Data de Início')
+    data_fim = models.DateField('Data de Fim')
+    motivo = models.CharField(max_length=255, blank=True, null=True, help_text="Opcional (ex: Férias)")
+
+    class Meta:
+        ordering = ['data_inicio']
+        verbose_name = 'Bloqueio de Data'
+        verbose_name_plural = 'Bloqueios de Datas'
+
+    def __str__(self):
+        if self.data_inicio == self.data_fim:
+            return f"{self.barber.nome_exibicao} bloqueado em {self.data_inicio.strftime('%d/%m/%Y')}"
+        return f"{self.barber.nome_exibicao} bloqueado de {self.data_inicio.strftime('%d/%m')} até {self.data_fim.strftime('%d/%m/%Y')}"
+
+    def clean(self):
+        # Garante que a data final não seja anterior à inicial
+        if self.data_fim < self.data_inicio:
+            raise ValidationError('A data de fim não pode ser anterior à data de início.')

@@ -32,3 +32,6 @@ htmlcov/
 # Deployment files
 *.tar.gz
 *.zip
+gcs-key.json
+mysql_data/
+staticfiles/

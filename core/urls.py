@@ -14,6 +14,20 @@ urlpatterns = [
         name='success_page'
     ),
     
+    path(
+        'painel/bloqueio/delete/<int:pk>/', 
+        views.DeleteBloqueioView.as_view(), 
+        name='delete_bloqueio'
+    ),
+    
+    path(
+        'api/barber-available-dates/<int:barber_id>/', 
+        views.GetBarberAvailableDatesView.as_view(), 
+        name='get_barber_available_dates'
+    ),
+    
+    path('api/profile/photo/', views.ProfilePhotoUploadView.as_view(), name='profile_photo_upload'),
+    
     path('painel/', views.PainelView.as_view(), name='painel'),
     
     path(

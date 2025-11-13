@@ -2,7 +2,7 @@ from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
 from .models import (
     User, Service, BarberProfile, 
-    Availability, Appointment, BarberService
+    Availability, Appointment, BarberService, Bloqueio
 )
 
 # --- Configuração do Admin de Usuário ---
@@ -11,6 +11,8 @@ class BarberProfileInline(admin.StackedInline):
     can_delete = False
     verbose_name_plural = 'Perfil de Barbeiro'
     fk_name = 'user'
+    
+    fields = ('nome_exibicao', 'telefone_whatsapp', 'bio', 'profile_picture')
 
 class CustomUserAdmin(UserAdmin):
     fieldsets = UserAdmin.fieldsets + (
@@ -75,3 +77,11 @@ admin.site.register(User, CustomUserAdmin)
 class BarberServiceAdmin(admin.ModelAdmin):
     list_display = ('barber', 'service', 'preco')
     search_fields = ('barber__nome_exibicao', 'service__nome')
+    
+@admin.register(Bloqueio)
+class BloqueioAdmin(admin.ModelAdmin):
+    list_display = ('barber', 'data_inicio', 'data_fim', 'motivo')
+    list_filter = ('barber',)
+    search_fields = ('barber__nome_exibicao', 'motivo')
+    # Facilita a seleção do barbeiro
+    autocomplete_fields = ('barber',)

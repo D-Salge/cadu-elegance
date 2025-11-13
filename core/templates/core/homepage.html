@@ -1,342 +1,550 @@
 {% extends 'core/base.html' %}
+{% load static %}
 
 {% block title %}Agendamento - Cadu Elegance{% endblock %}
 
 {% block scripts %}
     <script src="https://unpkg.com/imask"></script>
     <script>
-        // O nosso código JS de agendamento vem aqui
-        document.addEventListener('DOMContentLoaded', () => {
-            // 1. Pegar todos os elementos do HTML
-            const container = document.querySelector('.container-main'); // Mudamos o seletor
-            const csrfToken = document.querySelector('input[name="csrfmiddlewaretoken"]').value;
-            const barberSelect = document.getElementById('barber-select');
-            const dateCarousel = document.getElementById('date-carousel'); 
-            const serviceSelect = document.getElementById('service-select');
+        // core/templates/core/homepage.html (dentro do <script>)
+
+document.addEventListener('DOMContentLoaded', () => {
+    
+    // --- URLs E ESTADO GLOBAL ---
+    const container = document.querySelector('.container-main');
+    const csrfToken = document.querySelector('input[name="csrfmiddlewaretoken"]').value;
+    const GET_SLOTS_URL = container.dataset.getSlotsUrl;
+    const CREATE_APPOINTMENT_URL = container.dataset.createAppointmentUrl;
+    const GET_DATES_URL_BASE = container.dataset.getDatesUrlBase; // Ex: /api/barber-available-dates/
+
+    let selectedBarberId = null;
+    let selectedBarberName = null; // Para display
+    let selectedBarberInitialRect = null; // Para animação FLIP
+    let selectedBarberPhotoHtml = null; // Para mover para o form
+
+    let selectedServiceId = null;
+    let selectedDate = null;
+    let selectedSlotTime = null;
+
+    // --- ELEMENTOS DO DOM ---
+    // Ecrãs
+    const barberSelectionStep = document.getElementById('barber-selection-step');
+    const bookingFormStep = document.getElementById('booking-form-step');
+
+    // Seleção de Barbeiro
+    const barberList = document.getElementById('barber-list');
+    const barberChoices = document.querySelectorAll('.barber-choice');
+    const selectedBarberFormDisplay = document.getElementById('selected-barber-form-display'); // Novo elemento no formulário
+    const backToBarbersButton = document.getElementById('back-to-barbers');
+
+    // Formulário
+    const serviceSelect = document.getElementById('service-select');
+    const dateCarousel = document.getElementById('date-carousel');
+    const dateStep = document.getElementById('date-step');
+    const slotsStep = document.getElementById('slots-step');
+    const slotsContainer = document.getElementById('slots-container');
+    const slotsLoading = document.getElementById('slots-loading');
+    const slotsError = document.getElementById('slots-error');
+    const formStep = document.getElementById('form-step');
+
+    // Formulário Final
+    const clientNameInput = document.getElementById('client-name');
+    const clientPhoneInput = document.getElementById('client-phone');
+    const phoneMask = IMask(clientPhoneInput, {
+        mask: [{ mask: '(00) 0000-0000' }, { mask: '(00) 00000-0000' }]
+    });
+    const submitButton = document.getElementById('submit-button');
+    const submitLoading = document.getElementById('submit-loading');
+    const submitError = document.getElementById('submit-error');
+    const submitSuccess = document.getElementById('submit-success');
+    
+    // ---
+    // EVENT LISTENERS (FLUXO PRINCIPAL)
+    // ---
+
+    // 1. Início: Clicar num barbeiro
+    barberChoices.forEach(choice => {
+        choice.addEventListener('click', () => {
+            selectedBarberId = choice.dataset.barberId;
+            selectedBarberName = choice.dataset.barberName;
             
-            const serviceStep = document.getElementById('service-step');
-            const dateStep = document.getElementById('date-step');
-            const slotsStep = document.getElementById('slots-step');
-            const formStep = document.getElementById('form-step');
+            // Guarda o HTML da foto para reutilizar no formulário
+            const photoContainer = choice.querySelector('.barber-photo-container');
+            selectedBarberPhotoHtml = photoContainer.outerHTML;
 
-            const slotsContainer = document.getElementById('slots-container');
-            const slotsLoading = document.getElementById('slots-loading');
-            const slotsError = document.getElementById('slots-error');
+            handleBarberSelection(choice);
+        });
+    });
 
-            const clientNameInput = document.getElementById('client-name');
-            const clientPhoneInput = document.getElementById('client-phone');
-            
-            // --- Ativa a Máscara ---
-            const phoneMaskOptions = {
-                mask: [
-                    { mask: '(00) 0000-0000' },
-                    { mask: '(00) 00000-0000' }
-                ]
-            };
-            const phoneMask = IMask(clientPhoneInput, phoneMaskOptions);
-            // --- Fim da Máscara ---
+    // 2. Mudar serviço
+    serviceSelect.addEventListener('change', () => {
+        selectedServiceId = serviceSelect.value;
+        resetSteps(2);
+        if (selectedServiceId) {
+            fetchAvailableDates(); // Chama a NOVA API de datas
+            dateStep.classList.remove('d-none');
+        }
+    });
 
-            const submitButton = document.getElementById('submit-button');
-            const submitLoading = document.getElementById('submit-loading');
-            const submitError = document.getElementById('submit-error');
-            const submitSuccess = document.getElementById('submit-success');
-            
-            const GET_SLOTS_URL = container.dataset.getSlotsUrl;
-            const CREATE_APPOINTMENT_URL = container.dataset.createAppointmentUrl;
-            
-            let selectedBarberId = null;
-            let selectedServiceId = null;
-            let selectedDate = null;
-            let selectedSlotTime = null;
+    // 3. Voltar a trocar o barbeiro
+    backToBarbersButton.addEventListener('click', () => {
+        // Esconde o formulário
+        bookingFormStep.classList.add('d-none');
 
-            // --- EVENTOS ---
-            barberSelect.addEventListener('change', () => {
-                selectedBarberId = barberSelect.value;
-                resetSteps(1);
-                if (selectedBarberId) {
-                    serviceStep.classList.remove('d-none');
-                }
-            });
+        // Mostra a seleção de barbeiros
+        barberSelectionStep.style.display = 'block'; // Garante que a seção está visível
+        barberSelectionStep.classList.remove('d-none');
 
-            serviceSelect.addEventListener('change', () => {
-                selectedServiceId = serviceSelect.value;
-                resetSteps(2);
-                if (selectedServiceId) {
-                    generateDateCarousel();
-                    dateStep.classList.remove('d-none');
-                }
-            });
-            
-            submitButton.addEventListener('click', submitAppointment);
+        // Reseta TODOS os barbeiros para o estado inicial
+        barberChoices.forEach(el => {
+            el.style.opacity = 1;
+            el.style.transform = 'translate(0, 0) scale(1)';
+            el.style.pointerEvents = 'auto'; // <-- CORREÇÃO 1: Reativa o clique
+            el.style.display = 'flex';       // <-- CORREÇÃO 2: Garante que o Cadu reapareça
+            el.style.position = '';          // Reseta o posicionamento da animação
+            el.style.top = '';
+            el.style.left = '';
+            el.style.width = '';
+            el.style.height = '';
+            el.style.transformOrigin = '';
+            el.classList.remove('selected');
+        });
 
-            // --- Gerar Carrossel ---
-            function generateDateCarousel() {
-                dateCarousel.innerHTML = '';
-                const today = new Date();
-                const daysToShow = 14; 
+        // Reseta os dados e o formulário
+        resetSteps(1); 
+        selectedBarberId = null;
+        selectedBarberName = null;
+        selectedBarberPhotoHtml = null;
+    });
 
-                for (let i = 0; i < daysToShow; i++) {
-                    const date = new Date(today);
-                    date.setDate(today.getDate() + i);
-                    const dateSlot = document.createElement('div');
-                    dateSlot.classList.add('date-slot'); 
-                    dateSlot.dataset.date = dateToYYYYMMDD(date); 
-                    const weekday = date.toLocaleDateString('pt-BR', { weekday: 'short' });
-                    const dayMonth = date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
-                    dateSlot.innerHTML = `<div class="weekday">${weekday.replace('.', '')}</div><div class="day">${dayMonth}</div>`;
-                    dateSlot.addEventListener('click', handleDateClick);
-                    dateCarousel.appendChild(dateSlot);
-                }
-            }
+    // 4. Enviar agendamento (mesmo de antes)
+    submitButton.addEventListener('click', submitAppointment);
 
-            // --- Clique na Data ---
-            function handleDateClick(event) {
-                const clickedSlot = event.currentTarget;
-                resetSteps(3);
-                document.querySelectorAll('.date-slot').forEach(s => s.classList.remove('selected'));
-                clickedSlot.classList.add('selected');
-                selectedDate = clickedSlot.dataset.date;
-                if (selectedDate) {
-                    fetchAvailableSlots();
-                }
-            }
+    // ---
+    // FUNÇÕES DE LÓGICA E ANIMAÇÃO
+    // ---
 
-            // --- Buscar Slots (API GET) ---
-            async function fetchAvailableSlots() {
-                slotsStep.classList.remove('d-none');
-                slotsLoading.classList.remove('d-none');
-                slotsError.classList.add('d-none');
-                slotsContainer.innerHTML = ''; 
-                const url = `${GET_SLOTS_URL}?barber_id=${selectedBarberId}&service_id=${selectedServiceId}&date=${selectedDate}`;
+    function handleBarberSelection(selectedElement) {
+        // FLIP: FIRST (Grava a posição inicial)
+        selectedBarberInitialRect = selectedElement.getBoundingClientRect();
 
-                try {
-                    const response = await fetch(url);
-                    if (!response.ok) {
-                        const errorData = await response.json();
-                        throw new Error(errorData.error || 'Não foi possível buscar os horários.');
-                    }
-                    const data = await response.json();
-                    slotsLoading.classList.add('d-none');
-                    if (data.available_slots.length === 0) {
-                        slotsError.textContent = 'Nenhum horário livre para este dia. Tente outra data.';
-                        slotsError.classList.remove('d-none');
-                        return;
-                    }
-                    data.available_slots.forEach(slotTime => {
-                        // MUDANÇA: Usando classes do Bootstrap para os botões
-                        const slotElement = document.createElement('button');
-                        slotElement.classList.add('btn', 'btn-outline-primary', 'slot-btn');
-                        slotElement.textContent = slotTime;
-                        slotElement.dataset.time = slotTime; 
-                        slotElement.addEventListener('click', handleSlotClick);
-                        slotsContainer.appendChild(slotElement);
-                    });
-                } catch (error) {
-                    slotsLoading.classList.add('d-none');
-                    slotsError.textContent = error.message;
-                    slotsError.classList.remove('d-none');
-                }
-            }
-
-            // --- Clique no Slot ---
-            function handleSlotClick(event) {
-                document.querySelectorAll('.slot-btn').forEach(s => s.classList.remove('active'));
-                const clickedSlot = event.target;
-                clickedSlot.classList.add('active');
-                selectedSlotTime = clickedSlot.dataset.time;
-                formStep.classList.remove('d-none');
-            }
-
-            // --- Enviar Agendamento (API POST) ---
-            async function submitAppointment() {
-                submitLoading.classList.remove('d-none');
-                submitError.classList.add('d-none');
-                submitSuccess.classList.add('d-none');
-                submitButton.disabled = true;
-
-                const clientName = clientNameInput.value;
-                const clientPhone = phoneMask.unmaskedValue; // Pega o valor limpo (só números)
-                const startDateTime = `${selectedDate}T${selectedSlotTime}`;
-                
-                const appointmentData = {
-                    barber_id: parseInt(selectedBarberId),
-                    service_id: parseInt(selectedServiceId),
-                    start_datetime: startDateTime,
-                    client_name: clientName,
-                    client_phone: clientPhone
-                };
-
-                try {
-                    const response = await fetch(CREATE_APPOINTMENT_URL, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'X-CSRFToken': csrfToken
-                        },
-                        body: JSON.stringify(appointmentData)
-                    });
-                    if (!response.ok) {
-                        const errorData = await response.json();
-                        const errorMsg = errorData.non_field_errors || errorData.start_datetime || errorData.detail || 'Erro desconhecido.';
-                        throw new Error(Array.isArray(errorMsg) ? errorMsg[0] : errorMsg);
-                    }
-                    const newAppointment = await response.json();
-                    window.location.href = `/agendamento/sucesso/${newAppointment.id}/`;
-                } catch (error) {
-                    submitLoading.classList.add('d-none');
-                    submitError.textContent = `Erro: ${error.message}`;
-                    submitError.classList.remove('d-none');
-                } finally {
-                    submitButton.disabled = false;
-                }
-            }
-            
-            // --- Resetar Passos ---
-            function resetSteps(fromStep) {
-                // (Usando d-none do Bootstrap)
-                if (fromStep <= 0) {
-                    barberSelect.value = '';
-                    serviceStep.classList.add('d-none');
-                }
-                if (fromStep <= 1) {
-                    serviceSelect.value = '';
-                    dateStep.classList.add('d-none');
-                }
-                if (fromStep <= 2) {
-                    dateCarousel.innerHTML = '';
-                    selectedDate = null;
-                    slotsStep.classList.add('d-none');
-                }
-                if (fromStep <= 3) {
-                    slotsContainer.innerHTML = '';
-                    slotsError.classList.add('d-none');
-                    slotsLoading.classList.add('d-none');
-                    formStep.classList.add('d-none');
-                    selectedSlotTime = null;
-                }
-                if (fromStep <= 4) {
-                    clientNameInput.value = '';
-                    clientPhoneInput.value = '';
-                    submitError.classList.add('d-none');
-                    submitSuccess.classList.add('d-none');
-                }
-            }
-
-            // --- Utilitários ---
-            function dateToYYYYMMDD(date) {
-                const year = date.getFullYear();
-                const month = String(date.getMonth() + 1).padStart(2, '0');
-                const day = String(date.getDate()).padStart(2, '0');
-                return `${year}-${month}-${day}`;
+        // 1. Esconde os outros barbeiros e marca o selecionado
+        barberChoices.forEach(el => {
+            if (el !== selectedElement) {
+                el.style.opacity = 0;
+                el.style.pointerEvents = 'none'; // Desabilita clique
+            } else {
+                el.classList.add('selected');
+                el.style.zIndex = '10'; // Garante que o selecionado fique por cima
             }
         });
+
+        // 2. Prepara o display do barbeiro no formulário
+        selectedBarberFormDisplay.innerHTML = `
+            <div class="barber-photo-container-form" style="width: 100px; height: 100px; border-width: 2px;">
+                ${selectedBarberPhotoHtml}
+            </div>
+            <h4 class="mt-2 mb-4">${selectedBarberName}</h4>
+        `;
+        
+        // Move o formulário para o topo da página para calcular a posição final
+        // (temporariamente para calcular o LAST)
+        barberSelectionStep.style.display = 'none';
+        bookingFormStep.classList.remove('d-none');
+        bookingFormStep.style.opacity = 0; // Esconde enquanto calcula
+
+        // FLIP: LAST (Grava a posição final)
+        const targetPhoto = selectedBarberFormDisplay.querySelector('.barber-photo-container-form');
+        const targetRect = targetPhoto.getBoundingClientRect();
+
+        // Volta a esconder o formulário para que a animação comece do local correto
+        bookingFormStep.classList.add('d-none');
+        barberSelectionStep.style.display = 'block';
+
+
+        // FLIP: INVERT (Calcula a diferença e aplica a transformação inicial)
+        const deltaX = selectedBarberInitialRect.left - targetRect.left + (selectedBarberInitialRect.width - targetRect.width) / 2;
+        const deltaY = selectedBarberInitialRect.top - targetRect.top + (selectedBarberInitialRect.height - targetRect.height) / 2;
+        const deltaScale = targetRect.width / selectedBarberInitialRect.width; // Escala inversa
+
+        // Aplica a transformação inicial ao barbeiro selecionado
+        selectedElement.style.transition = 'none'; // Desliga a transição temporariamente
+        selectedElement.style.transform = `translate(${deltaX}px, ${deltaY}px) scale(${1 / deltaScale})`; // Aplica a inversão
+        selectedElement.style.position = 'fixed'; // Fixa a posição para a transição
+        selectedElement.style.top = `${selectedBarberInitialRect.top}px`;
+        selectedElement.style.left = `${selectedBarberInitialRect.left}px`;
+        selectedElement.style.margin = '0';
+        selectedElement.style.width = `${selectedBarberInitialRect.width}px`;
+        selectedElement.style.height = `${selectedBarberInitialRect.height}px`;
+        selectedElement.style.transformOrigin = 'top left'; // Importante para a escala
+
+
+        // FLIP: PLAY (Anima para a posição final)
+        requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+                selectedElement.style.transition = 'transform 0.6s ease-in-out, opacity 0.6s ease-in-out';
+                selectedElement.style.transform = `translate(0, 0) scale(${1 / deltaScale})`; // A escala aqui é complicada, precisa ser ajustada para o target
+                selectedElement.style.opacity = 0; // Vai sumir para o clone aparecer
+            });
+        });
+        
+        // Depois da animação do barbeiro, mostra o formulário.
+        setTimeout(() => {
+            barberSelectionStep.classList.add('d-none');
+            bookingFormStep.classList.remove('d-none');
+            bookingFormStep.style.opacity = 1; // Mostra o formulário
+            
+            // Resetar o barbeiro original para que não interfira
+            selectedElement.style.display = 'none'; // Esconde o original
+            selectedElement.style.position = ''; // Remove fixed
+            selectedElement.style.transform = ''; // Remove transform
+        }, 600); // Tempo da animação
+    }
+
+    // (NOVA) Busca os dias em que o barbeiro trabalha
+    async function fetchAvailableDates() {
+        dateCarousel.innerHTML = '';
+        if (!selectedBarberId) return;
+
+        // O URL base precisa ser construído com o ID do barbeiro
+        const url = GET_DATES_URL_BASE.replace('0', selectedBarberId);
+        
+        try {
+            const response = await fetch(url);
+            if (!response.ok) throw new Error('Erro ao buscar datas.');
+            
+            const data = await response.json();
+            
+            if (data.available_dates.length === 0) {
+                slotsError.textContent = 'Este profissional não tem datas disponíveis cadastradas.';
+                slotsError.classList.remove('d-none');
+                dateStep.classList.add('d-none'); // Esconde o carrossel de datas
+                return;
+            }
+
+            data.available_dates.forEach(dateString => {
+                const date = new Date(dateString + 'T00:00:00-03:00'); 
+                const dateSlot = document.createElement('div');
+                dateSlot.classList.add('date-slot'); 
+                dateSlot.dataset.date = dateToYYYYMMDD(date); 
+                const weekday = date.toLocaleDateString('pt-BR', { weekday: 'short' });
+                const dayMonth = date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+                dateSlot.innerHTML = `<div class="weekday">${weekday.replace('.', '')}</div><div class="day">${dayMonth}</div>`;
+                dateSlot.addEventListener('click', handleDateClick);
+                dateCarousel.appendChild(dateSlot);
+            });
+
+            // Limpa o erro se houver datas
+            slotsError.classList.add('d-none');
+
+        } catch (error) {
+            slotsError.textContent = error.message;
+            slotsError.classList.remove('d-none');
+            dateStep.classList.add('d-none'); // Esconde o carrossel de datas
+        }
+    }
+
+    // ... (restante das funções - fetchAvailableSlots, handleSlotClick, submitAppointment, dateToYYYYMMDD - são as mesmas)
+    // 4. (ALTERADO) Clique na data (chama a API de slots)
+    function handleDateClick(event) {
+        const clickedSlot = event.currentTarget;
+        resetSteps(3); // Reseta a partir do passo de slots
+        document.querySelectorAll('.date-slot').forEach(s => s.classList.remove('selected'));
+        clickedSlot.classList.add('selected');
+        selectedDate = clickedSlot.dataset.date;
+        if (selectedDate) {
+            fetchAvailableSlots(); // Esta é a API 'get-available-slots' (antiga)
+        }
+    }
+
+    // 5. (IGUAL) Busca os slots de um dia específico
+    async function fetchAvailableSlots() {
+        slotsStep.classList.remove('d-none');
+        slotsLoading.classList.remove('d-none');
+        slotsError.classList.add('d-none');
+        slotsContainer.innerHTML = ''; 
+        const url = `${GET_SLOTS_URL}?barber_id=${selectedBarberId}&service_id=${selectedServiceId}&date=${selectedDate}`;
+
+        try {
+            const response = await fetch(url);
+            if (!response.ok) throw new Error('Erro nos slots.');
+            const data = await response.json();
+            slotsLoading.classList.add('d-none');
+            if (data.available_slots.length === 0) {
+                slotsError.textContent = 'Nenhum horário livre para este dia.';
+                slotsError.classList.remove('d-none');
+                formStep.classList.add('d-none'); // Esconde o formulário se não há slots
+                return;
+            }
+            data.available_slots.forEach(slotTime => {
+                const slotElement = document.createElement('button');
+                slotElement.classList.add('btn', 'btn-outline-primary', 'slot-btn');
+                slotElement.textContent = slotTime;
+                slotElement.dataset.time = slotTime; 
+                slotElement.addEventListener('click', handleSlotClick);
+                slotsContainer.appendChild(slotElement);
+            });
+            slotsError.classList.add('d-none'); // Limpa o erro se encontrou slots
+        } catch (error) {
+            slotsLoading.classList.add('d-none');
+            slotsError.textContent = error.message;
+            slotsError.classList.remove('d-none');
+            formStep.classList.add('d-none'); // Esconde o formulário em caso de erro
+        }
+    }
+
+    // 6. (IGUAL) Clique no slot
+    function handleSlotClick(event) {
+        document.querySelectorAll('.slot-btn').forEach(s => s.classList.remove('active'));
+        const clickedSlot = event.target;
+        clickedSlot.classList.add('active');
+        selectedSlotTime = clickedSlot.dataset.time;
+        formStep.classList.remove('d-none');
+    }
+
+    // 7. (IGUAL) Envio do formulário
+    async function submitAppointment() {
+        submitLoading.classList.remove('d-none');
+        submitError.classList.add('d-none');
+        submitSuccess.classList.add('d-none');
+        submitButton.disabled = true;
+
+        const appointmentData = {
+            barber_id: parseInt(selectedBarberId),
+            service_id: parseInt(selectedServiceId),
+            start_datetime: `${selectedDate}T${selectedSlotTime}`,
+            client_name: clientNameInput.value,
+            client_phone: phoneMask.unmaskedValue
+        };
+
+        try {
+            const response = await fetch(CREATE_APPOINTMENT_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
+                body: JSON.stringify(appointmentData)
+            });
+            if (!response.ok) {
+                const errorData = await response.json();
+                const errorMsg = errorData.non_field_errors || errorData.detail || 'Erro desconhecido.';
+                throw new Error(Array.isArray(errorMsg) ? errorMsg[0] : errorMsg);
+            }
+            const newAppointment = await response.json();
+            
+            // Pega o ID e o Token da resposta da API
+            const appointmentId = newAppointment.id;
+            const successToken = newAppointment.success_token;
+
+            // SUCESSO! Redireciona o cliente para a página de sucesso com o token de validação
+            window.location.href = `/agendamento/sucesso/${appointmentId}/?token=${successToken}`;
+            
+        } catch (error) {
+            submitLoading.classList.add('d-none');
+            submitError.textContent = `Erro: ${error.message}`;
+            submitError.classList.remove('d-none');
+        } finally {
+            submitButton.disabled = false;
+        }
+    }
+    
+    // 8. (ALTERADO) Resetar os passos
+    function resetSteps(fromStep) {
+        if (fromStep <= 1) { // Ao voltar para seleção de barbeiro
+            serviceSelect.value = '';
+            dateStep.classList.add('d-none');
+            slotsStep.classList.add('d-none');
+            formStep.classList.add('d-none');
+            slotsError.classList.add('d-none'); // Limpa mensagens de erro
+            submitError.classList.add('d-none'); // Limpa mensagens de erro
+        }
+        if (fromStep <= 2) { // Ao mudar o serviço
+            dateCarousel.innerHTML = '';
+            selectedDate = null;
+            slotsStep.classList.add('d-none');
+            formStep.classList.add('d-none');
+            slotsError.classList.add('d-none');
+        }
+        if (fromStep <= 3) { // Ao clicar na data
+            slotsContainer.innerHTML = '';
+            slotsError.classList.add('d-none');
+            slotsLoading.classList.add('d-none');
+            formStep.classList.add('d-none');
+            selectedSlotTime = null;
+        }
+        if (fromStep <= 4) { // Ao clicar no slot
+            clientNameInput.value = '';
+            clientPhoneInput.value = '';
+            submitError.classList.add('d-none');
+            submitSuccess.classList.add('d-none');
+        }
+    }
+
+    // 9. (IGUAL) Utilitário
+    function dateToYYYYMMDD(date) {
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    }
+});
     </script>
 {% endblock %}
 
-
 {% block content %}
-<div class="col-md-8 col-lg-6 mx-auto">
-    <div class="card shadow-sm container-main"
-         data-get-slots-url="{% url 'core:get_available_slots' %}"
-         data-create-appointment-url="{% url 'core:create_appointment' %}">
-        
-        <div class="card-body">
-            <h1 class="card-title h3 mb-4 text-center">Faça seu Agendamento</h1>
-            
-            <div class="step mb-3">
-                <label for="barber-select" class="form-label">1. Escolha o Profissional:</label>
-                <select id="barber-select" class="form-select form-select-lg">
-                    <option value="">Selecione...</option>
-                    {% for barber in barbers %}
-                        <option value="{{ barber.id }}">{{ barber.nome_exibicao }}</option>
-                    {% endfor %}
-                </select>
-            </div>
-
-            <div class="step mb-3 d-none" id="service-step">
-                <label for="service-select" class="form-label">2. Escolha o Serviço:</label>
-                <select id="service-select" class="form-select form-select-lg">
-                    <option value="">Selecione...</option>
-                    {% for service in services %}
-                        <option value="{{ service.id }}" data-duration="{{ service.duracao }}">
-                            {{ service.nome }} ({{ service.friendly_duration }})
-                        </option>
-                    {% endfor %}
-                </select>
-            </div>
-
-            <div class="step mb-3 d-none" id="date-step">
-                <label class="form-label">3. Escolha o Dia:</label>
-                <div class="date-carousel-container">
-                    <div class="date-carousel" id="date-carousel">
-                        </div>
-                </div>
-            </div>
-
-            <div class="step mb-3 d-none" id="slots-step">
-                <label class="form-label">4. Escolha o Horário:</label>
-                <div class="alert alert-info d-none" id="slots-loading">Buscando horários...</div>
-                <div class="alert alert-warning d-none" id="slots-error"></div>
-                <div class="d-flex flex-wrap gap-2" id="slots-container">
+<div class="container-fluid container-main"
+     data-get-slots-url="{% url 'core:get_available_slots' %}"
+     data-create-appointment-url="{% url 'core:create_appointment' %}"
+     data-get-dates-url-base="{% url 'core:get_barber_available_dates' '0' %}" {# '0' é um placeholder, será substituído no JS #}
+>
+    <div id="barber-selection-step" class="text-center pt-5">
+        <h1 class="h3 mb-5">Escolha o Profissional</h1>
+        <div id="barber-list" class="d-flex justify-content-center gap-4 flex-wrap">
+            {% for barber in barbers %}
+                <div class="barber-choice" data-barber-id="{{ barber.id }}" data-barber-name="{{ barber.nome_exibicao }}">
+                    <div class="barber-photo-container">
+                        {% if barber.profile_picture %} {# Se tiveres um campo 'profile_picture' no teu BarberProfile #}
+                            <img src="{{ barber.profile_picture.url }}" alt="{{ barber.nome_exibicao }}" class="barber-photo rounded-circle img-fluid">
+                        {% else %}
+                            <div class="barber-photo-fallback rounded-circle d-flex align-items-center justify-content-center">
+                                <span>{{ barber.nome_exibicao }}</span>
+                            </div>
+                        {% endif %}
                     </div>
-            </div>
-            
-            <div class="step d-none" id="form-step">
-                {% csrf_token %}
-                <hr class="my-4">
-                <h3 class="h5 mb-3">Preencha seus dados</h3>
-                <div class="mb-3">
-                    <label for="client-name" class="form-label">Seu Nome:</label>
-                    <input type="text" id="client-name" class="form-control" placeholder="Digite seu nome completo">
+                    <h5 class="mt-2">{{ barber.nome_exibicao }}</h5>
                 </div>
-                <div class="mb-3">
-                    <label for="client-phone" class="form-label">Seu WhatsApp:</label>
-                    <input type="tel" inputmode="numeric" id="client-phone" class="form-control" placeholder="(XX) XXXXX-XXXX">
+            {% endfor %}
+        </div>
+    </div>
+    
+    <div id="booking-form-step" class="col-md-8 col-lg-6 mx-auto d-none mt-5"> 
+        <div class="card shadow-sm">
+            <div class="card-body p-4">
+                
+                <div id="selected-barber-form-display" class="text-center mb-4 d-flex flex-column align-items-center">
+                    </div>
+
+                <div class="step mb-3">
+                    <label for="service-select" class="form-label">1. Escolha o Serviço:</label>
+                    <select id="service-select" class="form-select form-select-lg">
+                        <option value="">Selecione...</option>
+                        {% for service in services %}
+                            <option value="{{ service.id }}" data-duration="{{ service.duracao }}">{{ service.nome }} ({{ service.friendly_duration }})</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="step mb-3 d-none" id="date-step">
+                    <label class="form-label">2. Escolha o Dia:</label>
+                    <div class="date-carousel-container">
+                        <div class="date-carousel" id="date-carousel"></div>
+                    </div>
+                </div>
+
+                <div class="step mb-3 d-none" id="slots-step">
+                    <label class="form-label">3. Escolha o Horário:</label>
+                    <div class="alert alert-info d-none" id="slots-loading">Buscando horários...</div>
+                    <div class="alert alert-warning d-none" id="slots-error"></div>
+                    <div class="d-flex flex-wrap gap-2" id="slots-container"></div>
                 </div>
                 
-                <button type="button" id="submit-button" class="btn btn-success btn-lg w-100 mt-3">
-                    Confirmar Agendamento
-                </button>
-                <div class="alert alert-info mt-3 d-none" id="submit-loading">Enviando...</div>
-                <div class="alert alert-danger mt-3 d-none" id="submit-error"></div>
-                <div class="alert alert-success mt-3 d-none" id="submit-success">
-                    Agendamento realizado com sucesso!
+                <div class="step d-none" id="form-step">
+                    {% csrf_token %}
+                    <hr class="my-4">
+                    <h3 class="h5 mb-3">Preencha seus dados</h3>
+                    <div class="mb-3">
+                        <label for="client-name" class="form-label">Seu Nome:</label>
+                        <input type="text" id="client-name" class="form-control">
+                    </div>
+                    <div class="mb-3">
+                        <label for="client-phone" class="form-label">Seu WhatsApp:</label>
+                        <input type="tel" inputmode="numeric" id="client-phone" class="form-control" placeholder="(XX) XXXXX-XXXX">
+                    </div>
+                    <button type="button" id="submit-button" class="btn btn-success btn-lg w-100 mt-3">Confirmar Agendamento</button>
+                    <div class="alert alert-info mt-3 d-none" id="submit-loading">Enviando...</div>
+                    <div class="alert alert-danger mt-3 d-none" id="submit-error"></div>
+                    <div class="alert alert-success mt-3 d-none" id="submit-success">Agendamento realizado!</div>
                 </div>
+                
+                <button type="button" id="back-to-barbers" class="btn btn-sm btn-outline-secondary mt-3">&larr; Trocar profissional</button>
             </div>
         </div>
     </div>
 </div>
 
 <style>
-    /* Estilos para o Carrossel de Datas */
-    .date-carousel-container {
-        overflow-x: auto;
-        white-space: nowrap;
-        padding-bottom: 10px;
-        -webkit-overflow-scrolling: touch;
+    /* Estilos para as fotos dos barbeiros */
+    .barber-choice {
+        cursor: pointer;
+        transition: transform 0.3s ease-in-out, opacity 0.3s ease-in-out;
+        position: relative; /* Para animar o movimento */
+        display: flex; /* Para centralizar o conteúdo dentro da escolha */
+        flex-direction: column;
+        align-items: center;
+        width: 150px; /* Largura fixa para o contêiner */
     }
-    .date-carousel { display: inline-block; }
+
+    .barber-choice:hover {
+        transform: translateY(-5px); /* Efeito de "lift" ao passar o mouse */
+    }
+
+    .barber-photo-container {
+        width: 150px;
+        height: 150px;
+        border-radius: 50%;
+        overflow: hidden;
+        border: 3px solid #dee2e6; /* Borda cinza clara */
+        transition: all 0.3s ease-in-out;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background-color: #f8f9fa; /* Fundo claro para o fallback */
+        color: #6c757d; /* Cor do texto fallback */
+        font-weight: bold;
+    }
+
+    .barber-photo-container:hover {
+        border-color: #007bff; /* Borda azul ao passar o mouse */
+    }
+
+    .barber-photo {
+        width: 100%;
+        height: 100%;
+        object-fit: cover; /* Garante que a imagem preencha o círculo sem distorcer */
+    }
+    
+    /* Quando o barbeiro é selecionado, para a animação */
+    .barber-choice.selected .barber-photo-container {
+        border-color: #007bff; /* Ou a cor que preferires */
+        transform: scale(1.1); /* Um pequeno zoom no selecionado */
+    }
+
+    /* CSS para o carrossel de datas e slots (mantido) */
+    .date-carousel-container { overflow-x: auto; white-space: nowrap; padding-bottom: 10px; }
+    .date-carousel { display: inline-flex; gap: 10px; padding: 5px 0; }
     .date-slot {
-        display: inline-block;
-        text-align: center;
-        padding: 10px;
-        margin-right: 10px;
-        border: 1px solid #ccc;
+        flex: 0 0 auto; /* Não cresce, não encolhe, largura automática */
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 8px 12px;
+        border: 1px solid #dee2e6;
         border-radius: 8px;
         cursor: pointer;
-        min-width: 70px;
-        user-select: none;
+        transition: all 0.2s ease;
+        background-color: #fff;
     }
-    .date-slot .weekday {
-        font-size: 0.8em;
-        font-weight: bold;
-        text-transform: uppercase;
-    }
-    .date-slot .day { font-size: 1.1em; }
+    .date-slot:hover { background-color: #f8f9fa; border-color: #adb5bd; }
     .date-slot.selected {
-        background-color: var(--bs-primary);
-        color: white;
-        border-color: var(--bs-primary);
+        background-color: #007bff;
+        color: #fff;
+        border-color: #007bff;
+    }
+    .date-slot.selected .weekday, .date-slot.selected .day { color: #fff; }
+    .date-slot .weekday { font-size: 0.8em; text-transform: uppercase; color: #6c757d; }
+    .date-slot .day { font-size: 1.1em; font-weight: bold; color: #343a40; }
+
+    .slot-btn {
+        min-width: 80px;
     }
 </style>
 {% endblock %}

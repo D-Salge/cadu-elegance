@@ -41,6 +41,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'core',
     'rest_framework',
+    'storages',
 ]
 
 MIDDLEWARE = [
@@ -129,14 +130,48 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
 STATIC_URL = 'static/'
-
-STATICFILES_DIRS = [
-    os.path.join(BASE_DIR, 'static'),
-]
+STATICFILES_DIRS = [os.path.join(BASE_DIR, 'static')]
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
-
 AUTH_USER_MODEL = 'core.User'
+
+# --- Configuração de Mídia (FORÇANDO GCS) ---
+
+# 1. Define um MEDIA_ROOT local.
+# O Django PRECISA disto para guardar o arquivo temporariamente antes de o enviar.
+MEDIA_ROOT = os.path.join(BASE_DIR, 'media_temp_buffer')
+
+# 2. Pega as chaves (Se faltarem no .env, o config() VAI DAR ERRO. Ótimo.)
+GCS_KEY_FILE = config('GOOGLE_APPLICATION_CREDENTIALS')
+GS_BUCKET_NAME = config('GS_BUCKET_NAME')
+
+# 3. Autentica
+GCS_KEY_FILE_PATH = os.path.join(BASE_DIR, GCS_KEY_FILE)
+os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = GCS_KEY_FILE_PATH
+
+# 4. FORÇA o Django a usar o GCS para todos os uploads
+GS_LOCATION = 'media'
+DEFAULT_FILE_STORAGE = 'storages.backends.gcloud.GoogleCloudStorage'
+
+# 5. Configurações de Acesso (Modo Uniforme - sem ACL)
+GS_FILE_OVERWRITE = False
+GS_DEFAULT_ACL = None # NÃO usa ACL
+GS_QUERYSTRING_AUTH = False # URLs limpas
+
+# 6. Define o URL final para onde as imagens vão apontar
+MEDIA_URL = f'https://storage.googleapis.com/{GS_BUCKET_NAME}/{GS_LOCATION}/'
+
+# 7. Configuracao de estaticos (CSS/JS)
+STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
+
+STORAGES = {
+    'default': {
+        'BACKEND': 'storages.backends.gcloud.GoogleCloudStorage',
+    },
+    'staticfiles': {
+        'BACKEND': 'django.contrib.staticfiles.storage.StaticFilesStorage',
+    },
+}

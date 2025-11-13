@@ -1,5 +1,7 @@
 from django import forms
-from .models import Availability
+from .models import Availability, Bloqueio
+from django.utils import timezone
+
 
 class AvailabilityForm(forms.ModelForm):
     # Usamos TimeInput para que o HTML renderize um campo de hora (HH:MM)
@@ -19,3 +21,42 @@ class AvailabilityForm(forms.ModelForm):
         labels = {
             'dia_da_semana': 'Dia da Semana',
         }
+        
+class BloqueioForm(forms.ModelForm):
+    # Usamos o DateInput do HTML5 para um calendário
+    data_inicio = forms.DateField(
+        widget=forms.DateInput(attrs={'type': 'date'}),
+        label="Data de Início"
+    )
+    data_fim = forms.DateField(
+        widget=forms.DateInput(attrs={'type': 'date'}),
+        label="Data de Fim"
+    )
+
+    class Meta:
+        model = Bloqueio
+        # Campos que o barbeiro vai preencher
+        fields = ['data_inicio', 'data_fim', 'motivo']
+        labels = {
+            'motivo': 'Motivo (Opcional)',
+        }
+
+    # Validação para garantir que a data de início não é no passado
+    def clean_data_inicio(self):
+        data_inicio = self.cleaned_data.get('data_inicio')
+        if data_inicio and data_inicio < timezone.now().date():
+            raise forms.ValidationError("A data de início não pode ser no passado.")
+        return data_inicio
+
+    # Validação para garantir que a data fim não é antes da início
+    def clean(self):
+        cleaned_data = super().clean()
+        data_inicio = cleaned_data.get('data_inicio')
+        data_fim = cleaned_data.get('data_fim')
+
+        if data_inicio and data_fim:
+            if data_fim < data_inicio:
+                raise forms.ValidationError(
+                    "A data de fim não pode ser anterior à data de início."
+                )
+        return cleaned_data
