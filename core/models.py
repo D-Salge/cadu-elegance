@@ -3,6 +3,9 @@ from django.contrib.auth.models import AbstractUser
 from django.conf import settings
 from django.core.exceptions import ValidationError
 import re
+from django.utils import timezone
+from .validators import validate_file_size
+from django.core.validators import FileExtensionValidator
 
 # --- Model 1: Usuário Customizado ---
 class User(AbstractUser):
@@ -60,7 +63,10 @@ class BarberProfile(models.Model):
         upload_to='barber_photos/',  # Pasta dentro do S3
         blank=True,  # <-- 1. ADICIONE ESTA LINHA DE VOLTA
         null=True,
-        verbose_name="Foto de Perfil"
+        verbose_name="Foto de Perfil",
+        validators=[validate_file_size,
+                    FileExtensionValidator(allowed_extensions=['jpg', 'jpeg', 'png'])
+        ]
     )
     # --- FIM ---
     
@@ -100,6 +106,28 @@ class BarberProfile(models.Model):
 
         # Se for um formato desconhecido, retorna o que foi limpo
         return clean_phone
+    
+    def save(self, *args, **kwargs):
+        # Verifica se o objeto já existe no banco (é um update?)
+        if self.pk:
+            try:
+                # Pega a versão antiga do objeto do banco
+                old_instance = BarberProfile.objects.get(pk=self.pk)
+                
+                # Compara a foto antiga com a nova
+                # 1. A foto antiga existe?
+                # 2. A foto mudou? (self.profile_picture é a nova foto)
+                if old_instance.profile_picture and old_instance.profile_picture != self.profile_picture:
+                    
+                    # Se sim, apaga a foto antiga do GCS
+                    # (O 'save=False' impede um loop infinito)
+                    old_instance.profile_picture.delete(save=False)
+                    
+            except BarberProfile.DoesNotExist:
+                pass # Objeto é novo, nada a fazer
+        
+        # Continua o processo normal de salvar (seja novo ou update)
+        super(BarberProfile, self).save(*args, **kwargs)
 
 # --- NOVO MODEL (Model 4): O Serviço do Barbeiro (com Preço) ---
 # Este é o model "through". É aqui que o preço vive.
@@ -168,6 +196,18 @@ class Appointment(models.Model):
     data_hora_inicio = models.DateTimeField('Início do Agendamento')
     data_hora_fim = models.DateTimeField('Fim do Agendamento')
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pendente')
+    
+    def save(self, *args, **kwargs):
+        # Pega o timezone padrão (definido como 'UTC' no settings.py)
+        default_tz = timezone.get_current_timezone()
+
+        if self.data_hora_inicio and timezone.is_naive(self.data_hora_inicio):
+            self.data_hora_inicio = timezone.make_aware(self.data_hora_inicio, default_tz) # <-- CORRIGIDO
+
+        if self.data_hora_fim and timezone.is_naive(self.data_hora_fim):
+            self.data_hora_fim = timezone.make_aware(self.data_hora_fim, default_tz) # <-- CORRIGIDO
+            
+        super().save(*args, **kwargs)
 
     class Meta:
         ordering = ['data_hora_inicio']

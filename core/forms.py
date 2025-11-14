@@ -22,6 +22,23 @@ class AvailabilityForm(forms.ModelForm):
             'dia_da_semana': 'Dia da Semana',
         }
         
+    def clean(self):
+        # Chama a lógica de limpeza principal primeiro
+        cleaned_data = super().clean() 
+        
+        hora_inicio = cleaned_data.get("hora_inicio")
+        hora_fim = cleaned_data.get("hora_fim")
+
+        # Se ambos os campos existirem, compara-os
+        if hora_inicio and hora_fim:
+            if hora_fim <= hora_inicio:
+                # Se a hora de fim for antes ou igual, levanta um erro
+                raise forms.ValidationError(
+                    "A hora de fim deve ser depois da hora de início."
+                )
+        
+        return cleaned_data
+        
 class BloqueioForm(forms.ModelForm):
     # Usamos o DateInput do HTML5 para um calendário
     data_inicio = forms.DateField(

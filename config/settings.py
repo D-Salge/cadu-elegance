@@ -13,6 +13,7 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 from pathlib import Path
 from decouple import config
 import os
+import sys
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -27,7 +28,7 @@ SECRET_KEY = config('SECRET_KEY')
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = config('DEBUG', default=False, cast=bool)
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='').split(',')
 
 
 # Application definition
@@ -79,14 +80,14 @@ WSGI_APPLICATION = 'config.wsgi.application'
 
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.mysql', # Isso está correto, graças ao __init__.py
+        'ENGINE': 'django.db.backends.mysql', # Isso estÃ¡ correto, graÃ§as ao __init__.py
         'NAME': config('DB_NAME'),
         'USER': config('DB_USER'),
         'PASSWORD': config('DB_PASSWORD'),
         'HOST': config('DB_HOST', default='127.0.0.1'),
         'PORT': config('DB_PORT', default='3306'),
         'OPTIONS': {
-            # Boa prática para garantir consistência
+            # Boa prÃ¡tica para garantir consistÃªncia
             'init_command': "SET sql_mode='STRICT_TRANS_TABLES'",
             # Essencial para suportar emojis e caracteres especiais
             'charset': 'utf8mb4', 
@@ -137,31 +138,39 @@ STATICFILES_DIRS = [os.path.join(BASE_DIR, 'static')]
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 AUTH_USER_MODEL = 'core.User'
+LOGIN_URL = 'login'
+LOGIN_REDIRECT_URL = '/painel/'
 
-# --- Configuração de Mídia (FORÇANDO GCS) ---
+# --- ConfiguraÃ§Ã£o de MÃ­dia (FORÃANDO GCS) ---
 
 # 1. Define um MEDIA_ROOT local.
 # O Django PRECISA disto para guardar o arquivo temporariamente antes de o enviar.
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media_temp_buffer')
 
-# 2. Pega as chaves (Se faltarem no .env, o config() VAI DAR ERRO. Ótimo.)
+# 2. Pega as chaves (Se faltarem no .env, o config() VAI DAR ERRO. Ãtimo.)
 GCS_KEY_FILE = config('GOOGLE_APPLICATION_CREDENTIALS')
 GS_BUCKET_NAME = config('GS_BUCKET_NAME')
 
-# 3. Autentica
-GCS_KEY_FILE_PATH = os.path.join(BASE_DIR, GCS_KEY_FILE)
+    # 3. Autentica (CORRIGIDO)
+if os.path.isabs(GCS_KEY_FILE):
+    # O caminho no .env JÁ É absoluto
+    GCS_KEY_FILE_PATH = GCS_KEY_FILE
+else:
+    # O caminho no .env é relativo (ex: 'gcs-key.json'), junta com o BASE_DIR
+    GCS_KEY_FILE_PATH = os.path.join(BASE_DIR, GCS_KEY_FILE)
+    
 os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = GCS_KEY_FILE_PATH
 
-# 4. FORÇA o Django a usar o GCS para todos os uploads
+# 4. FORÃA o Django a usar o GCS para todos os uploads
 GS_LOCATION = 'media'
 DEFAULT_FILE_STORAGE = 'storages.backends.gcloud.GoogleCloudStorage'
 
-# 5. Configurações de Acesso (Modo Uniforme - sem ACL)
+# 5. ConfiguraÃ§Ãµes de Acesso (Modo Uniforme - sem ACL)
 GS_FILE_OVERWRITE = False
-GS_DEFAULT_ACL = None # NÃO usa ACL
+GS_DEFAULT_ACL = None # NÃO usa ACL
 GS_QUERYSTRING_AUTH = False # URLs limpas
 
-# 6. Define o URL final para onde as imagens vão apontar
+# 6. Define o URL final para onde as imagens vÃ£o apontar
 MEDIA_URL = f'https://storage.googleapis.com/{GS_BUCKET_NAME}/{GS_LOCATION}/'
 
 # 7. Configuracao de estaticos (CSS/JS)
@@ -175,3 +184,15 @@ STORAGES = {
         'BACKEND': 'django.contrib.staticfiles.storage.StaticFilesStorage',
     },
 }
+
+if 'test' in sys.argv or 'pytest' in sys.argv:
+    print(">>> ATENÇÃO: Usando banco de dados SQLite IN-MEMORY para testes. <<<")
+
+    # Sobrescreve a configuração do MariaDB
+    DATABASES['default'] = {
+        'ENGINE': 'django.db.backends.sqlite3',
+        'NAME': ':memory:', # ':memory:' usa a RAM (super rápido)
+    }
+
+    # (Opcional) Desliga o GCS durante os testes para não gastar API
+    DEFAULT_FILE_STORAGE = 'django.core.files.storage.FileSystemStorage'

@@ -1,9 +1,11 @@
 from django.shortcuts import render, redirect, get_object_or_404
-from django.views.generic import ListView, View, TemplateView 
+from django.views.generic import ListView, View, TemplateView, DetailView 
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
-from django.core.exceptions import PermissionDenied
+from django.contrib.auth.views import LoginView
+from django.contrib import auth
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.signing import Signer, BadSignature
-from .forms import AvailabilityForm, BloqueioForm # 1. Importe o nosso novo formulário
+from .forms import AvailabilityForm, BloqueioForm  # Formulários usados no painel
 from django.urls import reverse_lazy
 from django.http import JsonResponse
 from django.core.files.storage import default_storage
@@ -24,6 +26,38 @@ from django.views.generic import DetailView
 class AppointmentRateThrottle(AnonRateThrottle):
     """Limita quantos agendamentos anônimos podem ser criados por minuto."""
     rate = '5/min'
+
+
+class CoreLoginView(LoginView):
+    template_name = 'core/login.html'
+    redirect_authenticated_user = True
+
+    def get_form(self, form_class=None):
+        form = super().get_form(form_class)
+        placeholders = {'username': 'Seu usuário', 'password': 'Sua senha'}
+        for name, field in form.fields.items():
+            field.widget.attrs.setdefault('class', 'form-control')
+            field.widget.attrs.setdefault('autocomplete', 'off')
+            if name == 'username':
+                field.widget.attrs.setdefault('autofocus', 'autofocus')
+            if name in placeholders:
+                field.widget.attrs.setdefault('placeholder', placeholders[name])
+        return form
+
+    def form_valid(self, form):
+        user = form.get_user()
+        if not (user.is_staff or getattr(user, 'is_barber', False)):
+            auth.logout(self.request)
+            form.add_error(None, 'Esta conta não possui acesso ao painel de barbeiro.')
+            return self.form_invalid(form)
+        return super().form_valid(form)
+
+    def get_success_url(self):
+        return (
+            self.request.POST.get('next')
+            or self.request.GET.get('next')
+            or reverse_lazy('core:painel')
+        )
 
 class HomePageView(TemplateView):
     template_name = 'core/homepage.html'
@@ -69,13 +103,20 @@ class PainelView(BarberRequiredMixin, ListView):
             profile = self.request.user.barber_profile
             context['barber_profile'] = profile
             
-            # --- AGENDAMENTOS ---
+            # --- CORREÇÃO AQUI ---
             hoje = timezone.now().date()
+            
+            # 1. Cria um objeto datetime 'aware' (consciente do fuso horário)
+            #    para o início exato do dia (00:00:00 no fuso do Django - UTC)
+            start_of_today = timezone.make_aware(datetime.combine(hoje, time.min))
+            
             context['proximos_agendamentos'] = Appointment.objects.filter(
                 barber=profile,
-                data_hora_inicio__gte=hoje,
+                # 2. Compara o DateTimeField com o nosso objeto 'aware'
+                data_hora_inicio__gte=start_of_today, 
                 status__in=['pendente', 'confirmado']
             ).order_by('data_hora_inicio')
+            # --- FIM DA CORREÇÃO ---
 
             # --- FORMULÁRIOS (SÓ ADICIONA SE NÃO VIER DO POST) ---
             if 'availability_form' not in context:
@@ -166,52 +207,41 @@ class GetAvailableSlotsView(View):
     """
     Esta API View é chamada pelo frontend (JavaScript).
     Ela espera receber 3 parâmetros na URL (Query Params):
-    1. barber_id: O ID do BarberProfile
-    2. service_id: O ID do Service (serviço genérico)
-    3. date: A data que o cliente escolheu (formato AAAA-MM-DD)
-    
+    1. barber_id
+    2. service_id
+    3. date
+
     Ela retorna um JSON com a lista de slots (horários) disponíveis.
     """
 
     def get(self, request, *args, **kwargs):
-        # 1. Obter os parâmetros da URL
+        # 1. Obter os parâmetros (sem mudança aqui)
         try:
             barber_id = int(request.GET.get('barber_id'))
             service_id = int(request.GET.get('service_id'))
             selected_date_str = request.GET.get('date')
-            
-            # Converte a string da data (ex: '2025-11-15') para um objeto date
             selected_date = datetime.strptime(selected_date_str, '%Y-%m-%d').date()
-            
         except (TypeError, ValueError, AttributeError):
-            # Se faltar algum parâmetro ou o formato for inválido
             return JsonResponse({'error': 'Parâmetros inválidos'}, status=400)
 
-        # 2. Encontrar os objetos no banco
+        # 2. Encontrar os objetos no banco (sem mudança aqui)
         try:
-            # Encontra o serviço específico do barbeiro (para pegar a duração e o preço)
             barber_service = BarberService.objects.get(
                 barber__id=barber_id, 
                 service__id=service_id
             )
-            # Pega a duração do serviço (ex: 30 minutos)
-            service_duration = barber_service.service.duracao # Este é um objeto timedelta
-            
-            # Pega o dia da semana (0=Segunda, 1=Terça...)
+            service_duration = barber_service.service.duracao
             weekday = selected_date.weekday()
-            
-            # Busca TODOS os blocos de disponibilidade daquele barbeiro NAQUELE dia da semana
-            # Ex: Bloco 1 (Manhã): 09:00-12:00, Bloco 2 (Tarde): 14:00-18:00
+
             availability_blocks = Availability.objects.filter(
                 barber__id=barber_id, 
                 dia_da_semana=weekday
             )
-            
-            # Busca TODOS os agendamentos já marcados para aquele barbeiro NAQUELA data
+
             existing_appointments = Appointment.objects.filter(
                 barber__id=barber_id,
                 data_hora_inicio__date=selected_date,
-                status__in=['confirmado', 'pendente'] # Ignora 'cancelado'
+                status__in=['confirmado', 'pendente']
             )
 
         except BarberService.DoesNotExist:
@@ -219,53 +249,62 @@ class GetAvailableSlotsView(View):
         except Exception as e:
             return JsonResponse({'error': f'Erro ao buscar dados: {e}'}, status=500)
 
-        # --- 3. O ALGORITMO: Gerar e Filtrar os Slots ---
-        
+        # --- 3. O ALGORITMO (ATUALIZADO) ---
+
         available_slots = []
-        
-        # Pega os horários dos agendamentos existentes para checagem rápida
-        # Usamos 'time()' para comparar só a hora
-        booked_slots = {appt.data_hora_inicio.time() for appt in existing_appointments}
-        
+
+        # Pega o timezone padrão (ex: UTC, como definido no settings.py)
+        default_tz = timezone.get_current_timezone() 
+
+        # Pega a hora atual (aware)
+        now_aware = timezone.now()
+
         # Itera sobre cada bloco de trabalho (ex: manhã, depois tarde)
         for block in availability_blocks:
-            
-            # Define a hora de início e fim do bloco de trabalho
-            # Usamos datetime.combine para juntar a data (ex: 2025-11-15) com a hora (ex: 09:00)
-            slot_start_dt = datetime.combine(selected_date, block.hora_inicio)
-            block_end_dt = datetime.combine(selected_date, block.hora_fim)
-            
+
+            # Combina a data (naive) com a hora (naive)
+            slot_start_naive = datetime.combine(selected_date, block.hora_inicio)
+            block_end_naive = datetime.combine(selected_date, block.hora_fim)
+
+            # Torna o bloco "aware" (consciente do fuso)
+            slot_start_dt = timezone.make_aware(slot_start_naive, default_tz)
+            block_end_dt = timezone.make_aware(block_end_naive, default_tz)
+
             # Itera dentro do bloco, "pulando" de acordo com a duração do serviço
             while slot_start_dt + service_duration <= block_end_dt:
-                
-                # O horário final do slot
+
                 slot_end_dt = slot_start_dt + service_duration
-                
-                # Pega a hora atual do slot (ex: 09:00)
-                current_time = slot_start_dt.time()
-                
-                # --- Checagem 1: O slot já está reservado? ---
-                if current_time in booked_slots:
-                    # Sim, pule para o próximo
-                    slot_start_dt += service_duration # Avança o tempo
-                    continue # Volta para o início do 'while'
-                
-                # --- Checagem 2: O slot já passou (para agendamentos no mesmo dia)? ---
-                # Compara o 'datetime' do slot com o 'datetime' de agora
-                if slot_start_dt < datetime.now():
-                    # Sim, pule para o próximo
+
+                # --- CHECAGEM DE COLISÃO (A LÓGICA CORRETA) ---
+                is_booked = False
+                for appt in existing_appointments:
+                    # O slot (A) começa ANTES que o agendamento (B) termine? E
+                    # O slot (A) termina DEPOIS que o agendamento (B) começa?
+                    # Se sim, há sobreposição.
+                    # (A_start < B_end) and (A_end > B_start)
+                    if (slot_start_dt < appt.data_hora_fim) and (slot_end_dt > appt.data_hora_inicio):
+                        is_booked = True
+                        break # Encontramos uma colisão, não precisa checar mais
+
+                if is_booked:
+                    slot_start_dt += service_duration # Pula este slot
+                    continue
+                # --- FIM DA CHECAGEM DE COLISÃO ---
+
+                # --- Checagem 2: O slot já passou? ---
+                if slot_start_dt < now_aware:
                     slot_start_dt += service_duration
                     continue
-                
+
                 # Se passou nas checagens, é um slot válido!
                 available_slots.append(
-                    # Formata a hora para o cliente (ex: "09:00")
-                    current_time.strftime('%H:%M') 
+                    # Pega a hora (já está no fuso correto)
+                    slot_start_dt.astimezone(default_tz).time().strftime('%H:%M') 
                 )
-                
+
                 # Avança o tempo para o próximo slot
                 slot_start_dt += service_duration
-        
+
         # 4. Retorna a lista de slots como JSON
         return JsonResponse({'available_slots': available_slots})
     
@@ -447,15 +486,37 @@ class ProfilePhotoUploadView(APIView):
         file_obj = request.FILES.get('photo')
         if not file_obj:
             return Response(
-                {'detail': 'Envie um arquivo em "photo".'},
+                {'detail': 'Envie um arquivo no campo "photo".'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        filename = f'barber_photos/{uuid4().hex}-{file_obj.name}'
-        path = default_storage.save(filename, file_obj)
+        # --- CORREÇÃO DE SEGURANÇA AQUI ---
 
-        profile.profile_picture.name = path
+        try:
+            # 1. Atribui o arquivo ao campo do model *em memória*.
+            # Isto força o Django a rodar os validadores que estão no model
+            # (validate_file_size e FileExtensionValidator) ANTES de salvar no GCS.
+
+            # 'profile.profile_picture' é o campo ImageField
+            # 'file_obj' é o arquivo enviado
+            profile.profile_picture = file_obj
+
+            # 2. Força o Django a rodar TODAS as validações do model
+            # (Isto vai disparar os validadores de tamanho e extensão)
+            profile.full_clean()
+
+        except ValidationError as e:
+            # 3. Se a validação (tamanho ou extensão) falhou, o GCS não foi tocado.
+            # Retorna os erros de validação
+            return Response({'detail': e.message_dict}, status=status.HTTP_400_BAD_REQUEST)
+
+        # 4. Se as validações passaram, CHAMA O .SAVE()
+        # O nosso método save() customizado no models.py vai:
+        #   a) Salvar o novo arquivo (file_obj) no GCS
+        #   b) Apagar a foto antiga do GCS (evitando arquivos órfãos)
         profile.save(update_fields=['profile_picture'])
+
+        # --- FIM DA CORREÇÃO ---
 
         return Response({'photo_url': profile.profile_picture.url}, status=status.HTTP_201_CREATED)
 

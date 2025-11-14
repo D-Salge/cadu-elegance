@@ -10,7 +10,8 @@ services:
       MYSQL_DATABASE: ${DB_NAME}
       MYSQL_USER: ${DB_USER}
       MYSQL_PASSWORD: ${DB_PASSWORD}       # Cria o usuário com essa senha
-      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD} # Define a senha do 'root'
+
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD} # Define a senha do 'root'
     
     ports:
       # Expõe a porta do container (3306) para a sua máquina (127.0.0.1)

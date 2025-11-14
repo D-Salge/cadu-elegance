@@ -1,6 +1,6 @@
 # core/serializers.py
 from rest_framework import serializers
-from .models import Appointment, BarberService, BarberProfile
+from .models import Appointment, BarberService, BarberProfile, Bloqueio
 from datetime import datetime, timedelta
 from django.utils import timezone # Importe o timezone
 
@@ -37,25 +37,40 @@ class AppointmentSerializer(serializers.ModelSerializer):
         Validação customizada: Este é o "guarda" da nossa API.
         """
         
-        # --- MUDANÇA AQUI ---
-        # 1. Encontra o 'BarberService' usando o service_id e barber_id
+        # 1. Encontra o 'BarberService' (como já estava)
         try:
             barber_service = BarberService.objects.get(
-                service__id=data['service_id'], # <-- MUDANÇA AQUI
+                service__id=data['service_id'],
                 barber__id=data['barber_id']
             )
         except BarberService.DoesNotExist:
             raise serializers.ValidationError("O serviço ou barbeiro selecionado é inválido.")
 
+        # 2. Processa o Horário (como já estava)
         start_time = data['data_hora_inicio']
+        if timezone.is_naive(start_time):
+            start_time = timezone.make_aware(start_time, timezone.get_default_timezone())
+            data['data_hora_inicio'] = start_time
         end_time = start_time + barber_service.service.duracao
 
-        # 2. O slot já passou?
-        # --- MUDANÇA AQUI (para corrigir o bug de timezone) ---
+        # 3. O slot já passou? (como já estava)
         if start_time < timezone.now():
             raise serializers.ValidationError("Este horário já passou.")
 
-        # 3. O slot está ocupado? (A checagem de colisão)
+        # --- 4. CORREÇÃO CRÍTICA: O dia está bloqueado (Folga/Férias)? ---
+        dia_do_agendamento = start_time.date()
+        esta_bloqueado = Bloqueio.objects.filter(
+            barber__id=data['barber_id'],      # O barbeiro selecionado
+            data_inicio__lte=dia_do_agendamento,  # A folga começou antes ou no dia
+            data_fim__gte=dia_do_agendamento    # A folga termina depois ou no dia
+        ).exists()
+        
+        if esta_bloqueado:
+            # Se 'exists()' for True, o dia está bloqueado. Rejeite.
+            raise serializers.ValidationError("O profissional não está disponível nesta data (folga/férias).")
+        # --- FIM DA CORREÇÃO ---
+
+        # 5. O slot está ocupado? (A checagem de colisão, como já estava)
         existing_appointments = Appointment.objects.filter(
             barber__id=data['barber_id'],
             data_hora_inicio__date=start_time.date(),
@@ -68,7 +83,7 @@ class AppointmentSerializer(serializers.ModelSerializer):
         if existing_appointments.exists():
             raise serializers.ValidationError("Este horário acabou de ser reservado. Por favor, escolha outro.")
 
-        # Adiciona os dados que faltam
+        # Adiciona os dados que faltam (como já estava)
         data['barber'] = barber_service.barber
         data['barber_service'] = barber_service
         data['data_hora_fim'] = end_time
