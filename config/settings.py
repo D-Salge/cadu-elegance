@@ -20,6 +20,7 @@ from django.core.exceptions import ImproperlyConfigured
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+IS_TESTING = any(arg in sys.argv for arg in ('test', 'pytest'))
 
 
 # Quick-start development settings - unsuitable for production
@@ -148,75 +149,67 @@ AUTH_USER_MODEL = 'core.User'
 LOGIN_URL = 'login'
 LOGIN_REDIRECT_URL = '/painel/'
 
-# --- ConfiguraÃ§Ã£o de MÃ­dia (FORÃANDO GCS) ---
-
-# 1. Define um MEDIA_ROOT local.
-# O Django PRECISA disto para guardar o arquivo temporariamente antes de o enviar.
+# --- Media and storage configuration ---
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media_temp_buffer')
-
-# 2. Pega as chaves (Se faltarem no .env, o config() VAI DAR ERRO. Ãtimo.)
-GCS_KEY_FILE = config('GOOGLE_APPLICATION_CREDENTIALS', default='').strip()
-GCS_KEY_JSON = config('GOOGLE_APPLICATION_CREDENTIALS_JSON', default=None)
-GS_BUCKET_NAME = config('GS_BUCKET_NAME')
-
-    # 3. Autentica (CORRIGIDO)
-tmp_credentials_path = None
-if GCS_KEY_JSON:
-    try:
-        try:
-            parsed_credentials = json.loads(GCS_KEY_JSON)
-        except json.JSONDecodeError:
-            decoded = base64.b64decode(GCS_KEY_JSON)
-            parsed_credentials = json.loads(decoded.decode('utf-8'))
-    except Exception as exc:
-        raise ImproperlyConfigured(
-            "GOOGLE_APPLICATION_CREDENTIALS_JSON deve conter JSON válido "
-            "ou a string Base64 correspondente."
-        ) from exc
-
-    tmp_dir = BASE_DIR / 'tmp'
-    tmp_dir.mkdir(parents=True, exist_ok=True)
-    tmp_credentials_path = tmp_dir / 'gcs-key.json'
-    tmp_credentials_path.write_text(json.dumps(parsed_credentials), encoding='utf-8')
-    GCS_KEY_FILE_PATH = str(tmp_credentials_path)
-elif GCS_KEY_FILE:
-    if os.path.isabs(GCS_KEY_FILE):
-        # O caminho no .env JÁ É absoluto
-        GCS_KEY_FILE_PATH = GCS_KEY_FILE
-    else:
-        # O caminho no .env é relativo (ex: 'gcs-key.json'), junta com o BASE_DIR
-        GCS_KEY_FILE_PATH = os.path.join(BASE_DIR, GCS_KEY_FILE)
-else:
-    raise ImproperlyConfigured(
-        "Defina GOOGLE_APPLICATION_CREDENTIALS (caminho) ou "
-        "GOOGLE_APPLICATION_CREDENTIALS_JSON (conteúdo) para o GCS."
-    )
-
-os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = GCS_KEY_FILE_PATH
-
-# 4. FORÃA o Django a usar o GCS para todos os uploads
-GS_LOCATION = 'media'
-DEFAULT_FILE_STORAGE = 'storages.backends.gcloud.GoogleCloudStorage'
-
-# 5. ConfiguraÃ§Ãµes de Acesso (Modo Uniforme - sem ACL)
-GS_FILE_OVERWRITE = False
-GS_DEFAULT_ACL = None # NÃO usa ACL
-GS_QUERYSTRING_AUTH = False # URLs limpas
-
-# 6. Define o URL final para onde as imagens vÃ£o apontar
-MEDIA_URL = f'https://storage.googleapis.com/{GS_BUCKET_NAME}/{GS_LOCATION}/'
-
-# 7. Configuracao de estaticos (CSS/JS)
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 
-STORAGES = {
-    'default': {
-        'BACKEND': 'storages.backends.gcloud.GoogleCloudStorage',
-    },
-    'staticfiles': {
-        'BACKEND': 'django.contrib.staticfiles.storage.StaticFilesStorage',
-    },
-}
+if IS_TESTING:
+    GS_BUCKET_NAME = ''
+    DEFAULT_FILE_STORAGE = 'django.core.files.storage.FileSystemStorage'
+    STORAGES = {
+        'default': {'BACKEND': 'django.core.files.storage.FileSystemStorage'},
+        'staticfiles': {'BACKEND': 'django.contrib.staticfiles.storage.StaticFilesStorage'},
+    }
+    MEDIA_ROOT = os.path.join(BASE_DIR, 'test_media')
+    MEDIA_URL = '/media-test/'
+else:
+    GCS_KEY_FILE = config('GOOGLE_APPLICATION_CREDENTIALS', default='').strip()
+    GCS_KEY_JSON = config('GOOGLE_APPLICATION_CREDENTIALS_JSON', default=None)
+    GS_BUCKET_NAME = config('GS_BUCKET_NAME')
+
+        # 3. Autentica (CORRIGIDO)
+    tmp_credentials_path = None
+    if GCS_KEY_JSON:
+        try:
+            try:
+                parsed_credentials = json.loads(GCS_KEY_JSON)
+            except json.JSONDecodeError:
+                decoded = base64.b64decode(GCS_KEY_JSON)
+                parsed_credentials = json.loads(decoded.decode('utf-8'))
+        except Exception as exc:
+            raise ImproperlyConfigured(
+                'GOOGLE_APPLICATION_CREDENTIALS_JSON deve conter JSON válido '
+                'ou a string Base64 correspondente.'
+            ) from exc
+
+        tmp_dir = BASE_DIR / 'tmp'
+        tmp_dir.mkdir(parents=True, exist_ok=True)
+        tmp_credentials_path = tmp_dir / 'gcs-key.json'
+        tmp_credentials_path.write_text(json.dumps(parsed_credentials), encoding='utf-8')
+        GCS_KEY_FILE_PATH = str(tmp_credentials_path)
+    elif GCS_KEY_FILE:
+        if os.path.isabs(GCS_KEY_FILE):
+            GCS_KEY_FILE_PATH = GCS_KEY_FILE
+        else:
+            GCS_KEY_FILE_PATH = os.path.join(BASE_DIR, GCS_KEY_FILE)
+    else:
+        raise ImproperlyConfigured(
+            'Defina GOOGLE_APPLICATION_CREDENTIALS (caminho) ou ' 
+            'GOOGLE_APPLICATION_CREDENTIALS_JSON (conteúdo) para o GCS.'
+        )
+
+    os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = GCS_KEY_FILE_PATH
+
+    GS_LOCATION = 'media'
+    DEFAULT_FILE_STORAGE = 'storages.backends.gcloud.GoogleCloudStorage'
+    GS_FILE_OVERWRITE = False
+    GS_DEFAULT_ACL = None
+    GS_QUERYSTRING_AUTH = False
+    MEDIA_URL = f"https://storage.googleapis.com/{GS_BUCKET_NAME}/{GS_LOCATION}/"
+    STORAGES = {
+        'default': {'BACKEND': 'storages.backends.gcloud.GoogleCloudStorage'},
+        'staticfiles': {'BACKEND': 'django.contrib.staticfiles.storage.StaticFilesStorage'},
+    }
 
 # Segurança em produção
 SECURE_SSL_REDIRECT = config('SECURE_SSL_REDIRECT', default=not DEBUG, cast=bool)
@@ -237,7 +230,7 @@ CSRF_TRUSTED_ORIGINS = [
     origin.strip() for origin in raw_csrf_origins.split(',') if origin.strip()
 ]
 
-if any(arg in sys.argv for arg in ('test', 'pytest')):
+if IS_TESTING:
     print(">>> ATENÇÃO: Usando banco de dados SQLite IN-MEMORY para testes. <<<")
 
     # Sobrescreve a configuração do MariaDB
@@ -245,11 +238,3 @@ if any(arg in sys.argv for arg in ('test', 'pytest')):
         'ENGINE': 'django.db.backends.sqlite3',
         'NAME': ':memory:',  # ':memory:' usa a RAM (super rápido)
     }
-
-    # Desliga o GCS durante os testes
-    DEFAULT_FILE_STORAGE = 'django.core.files.storage.FileSystemStorage'
-    
-    # --- ADICIONE ESTA LINHA ---
-    # Define um local temporário para uploads (que será destruído após os testes)
-    MEDIA_ROOT = os.path.join(BASE_DIR, 'test_media') 
-    # --- FIM DA CORREÇÃO ---

@@ -437,6 +437,34 @@ class PainelViewTests(TestCase):
         self.assertContains(
             response, "A hora de fim deve ser depois da hora de início."
         )
+    
+    def test_07_barber_can_add_new_service(self):
+        """ Testa se o barbeiro consegue criar um novo Serviço (ex: Platinado). """
+        self.client.login(username='barbeiro_painel', password='123')
+        
+        # Contagem de serviços ANTES do POST
+        service_count_before = Service.objects.count()
+        
+        form_data = {
+            'nome': 'Platinado',
+            'descricao': 'Descoloração e tonalização',
+            'duracao': '02:30', # 2 horas e 30 minutos
+            'submit_service': '1' # O nome do botão que a view espera
+        }
+        
+        response = self.client.post(self.painel_url, form_data)
+        
+        # 302 (Redirect) significa que o POST foi bem-sucedido
+        self.assertEqual(response.status_code, 302)
+        self.assertRedirects(response, self.painel_url)
+        
+        # Verifica se o novo serviço foi realmente criado no banco
+        self.assertEqual(Service.objects.count(), service_count_before + 1)
+        self.assertTrue(Service.objects.filter(nome='Platinado').exists())
+        
+        # Verifica se a duração foi convertida corretamente (2h30 = 150 min)
+        novo_servico = Service.objects.get(nome='Platinado')
+        self.assertEqual(novo_servico.duracao, timedelta(minutes=150))
 
 
 class ProfilePhotoUploadTests(APITestCase):
