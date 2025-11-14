@@ -108,26 +108,30 @@ class BarberProfile(models.Model):
         return clean_phone
     
     def save(self, *args, **kwargs):
-        # Verifica se o objeto já existe no banco (é um update?)
+        old_instance = None
+        old_picture = None
+        
+        # 1. Antes de salvar, verifica se o objeto já existe
         if self.pk:
             try:
-                # Pega a versão antiga do objeto do banco
+                # Pega a instância antiga (antes da mudança) do banco
                 old_instance = BarberProfile.objects.get(pk=self.pk)
-                
-                # Compara a foto antiga com a nova
-                # 1. A foto antiga existe?
-                # 2. A foto mudou? (self.profile_picture é a nova foto)
-                if old_instance.profile_picture and old_instance.profile_picture != self.profile_picture:
-                    
-                    # Se sim, apaga a foto antiga do GCS
-                    # (O 'save=False' impede um loop infinito)
-                    old_instance.profile_picture.delete(save=False)
-                    
+                # Guarda o nome/caminho da foto antiga
+                old_picture = old_instance.profile_picture 
             except BarberProfile.DoesNotExist:
-                pass # Objeto é novo, nada a fazer
+                pass # Objeto é novo, não há foto antiga para apagar
         
-        # Continua o processo normal de salvar (seja novo ou update)
+        # 2. SALVA A NOVA FOTO PRIMEIRO
+        # O Django executa o save() e o upload para o GCS aqui.
+        # Se isto falhar, a foto antiga ainda não foi apagada.
         super(BarberProfile, self).save(*args, **kwargs)
+
+        # 3. SE O SAVE FUNCIONOU, limpa a foto antiga
+        # Verifica se tínhamos uma foto antiga E se a foto mudou
+        if old_instance and old_picture:
+            if old_picture != self.profile_picture:
+                # A foto mudou, então apaga a antiga do GCS
+                old_picture.delete(save=False)
 
 # --- NOVO MODEL (Model 4): O Serviço do Barbeiro (com Preço) ---
 # Este é o model "through". É aqui que o preço vive.

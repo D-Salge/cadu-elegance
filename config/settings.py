@@ -196,3 +196,20 @@ if 'test' in sys.argv or 'pytest' in sys.argv:
 
     # (Opcional) Desliga o GCS durante os testes para não gastar API
     DEFAULT_FILE_STORAGE = 'django.core.files.storage.FileSystemStorage'
+    
+if 'test' in sys.argv or 'pytest' in sys.argv:
+    print(">>> ATENÇÃO: Usando banco de dados SQLite IN-MEMORY para testes. <<<")
+
+    # Sobrescreve a configuração do MariaDB
+    DATABASES['default'] = {
+        'ENGINE': 'django.db.backends.sqlite3',
+        'NAME': ':memory:',
+    }
+
+    # Desliga o GCS durante os testes
+    DEFAULT_FILE_STORAGE = 'django.core.files.storage.FileSystemStorage'
+    
+    # --- ADICIONE ESTA LINHA ---
+    # Define um local temporário para uploads (que será destruído após os testes)
+    MEDIA_ROOT = os.path.join(BASE_DIR, 'test_media') 
+    # --- FIM DA CORREÇÃO ---

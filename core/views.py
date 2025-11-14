@@ -243,11 +243,25 @@ class GetAvailableSlotsView(View):
                 data_hora_inicio__date=selected_date,
                 status__in=['confirmado', 'pendente']
             )
+            
+            esta_bloqueado = Bloqueio.objects.filter(
+                barber__id=barber_id,
+                data_inicio__lte=selected_date,
+                data_fim__gte=selected_date
+            ).exists()
+            
+            if esta_bloqueado:
+                # Se o dia inteiro está bloqueado, retorna uma lista vazia
+                return JsonResponse({'available_slots': []})
+            # --- FIM DA CORREÇÃO ---
 
         except BarberService.DoesNotExist:
             return JsonResponse({'error': 'Este barbeiro não oferece esse serviço.'}, status=404)
         except Exception as e:
-            return JsonResponse({'error': f'Erro ao buscar dados: {e}'}, status=500)
+            # CORRIGIDO: Loga o erro real (para você ver no GCS Logs)
+            print(f"ERRO INESPERADO em GetAvailableSlotsView: {e}") 
+            # Retorna uma mensagem genérica para o cliente
+            return JsonResponse({'error': 'Não foi possível buscar os horários. Tente novamente mais tarde.'}, status=500)
 
         # --- 3. O ALGORITMO (ATUALIZADO) ---
 
@@ -490,33 +504,19 @@ class ProfilePhotoUploadView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        # --- CORREÇÃO DE SEGURANÇA AQUI ---
-
         try:
-            # 1. Atribui o arquivo ao campo do model *em memória*.
-            # Isto força o Django a rodar os validadores que estão no model
-            # (validate_file_size e FileExtensionValidator) ANTES de salvar no GCS.
-
-            # 'profile.profile_picture' é o campo ImageField
-            # 'file_obj' é o arquivo enviado
+            # Atribui o arquivo apenas para aproveitar os validadores do model.
             profile.profile_picture = file_obj
-
-            # 2. Força o Django a rodar TODAS as validações do model
-            # (Isto vai disparar os validadores de tamanho e extensão)
             profile.full_clean()
-
         except ValidationError as e:
-            # 3. Se a validação (tamanho ou extensão) falhou, o GCS não foi tocado.
-            # Retorna os erros de validação
             return Response({'detail': e.message_dict}, status=status.HTTP_400_BAD_REQUEST)
 
-        # 4. Se as validações passaram, CHAMA O .SAVE()
-        # O nosso método save() customizado no models.py vai:
-        #   a) Salvar o novo arquivo (file_obj) no GCS
-        #   b) Apagar a foto antiga do GCS (evitando arquivos órfãos)
-        profile.save(update_fields=['profile_picture'])
+        # Gera um nome único para evitar colisão nos testes/ambiente real.
+        file_obj.seek(0)
+        unique_name = f'barber_photos/{uuid4().hex}-{file_obj.name}'
+        profile.profile_picture.save(unique_name, file_obj, save=False)
 
-        # --- FIM DA CORREÇÃO ---
+        profile.save(update_fields=['profile_picture'])
 
         return Response({'photo_url': profile.profile_picture.url}, status=status.HTTP_201_CREATED)
 

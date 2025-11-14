@@ -14,8 +14,8 @@ from .models import (
 from django.utils import timezone
 from datetime import timedelta, time, datetime
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.conf import settings
-import os
+import io
+from PIL import Image
 
 
 class AppointmentAPITests(APITestCase):
@@ -459,21 +459,31 @@ class ProfilePhotoUploadTests(APITestCase):
         self.client.force_authenticate(user=self.barber_user)
 
     def test_01_upload_photo_success(self):
-        """Testa o upload bem-sucedido de uma imagem pequena."""
+        """ Testa o upload bem-sucedido de uma imagem pequena. """
 
-        # Cria um arquivo de imagem 'fake' em memória
+        # --- CORREÇÃO: Cria uma imagem PNG real em memória ---
+        # (O 'io' cria um arquivo binário em memória)
+        img_io = io.BytesIO()
+        # Cria uma imagem 100x100, azul
+        img = Image.new('RGB', (100, 100), color='blue') 
+        # Salva essa imagem como PNG dentro do arquivo em memória
+        img.save(img_io, format='PNG')
+        img_io.seek(0) # Volta ao início do "arquivo"
+
         fake_image = SimpleUploadedFile(
-            "foto_teste.png",
-            b"file_content_fake",  # Conteúdo fake (em bytes)
-            content_type="image/png",
+            "foto_teste.png", 
+            img_io.getvalue(), # <-- Usa o conteúdo PNG real
+            content_type="image/png"
         )
+        # --- FIM DA CORREÇÃO ---
 
         response = self.client.post(
             self.upload_url, {"photo": fake_image}, format="multipart"
         )
 
-        # Verifica se o arquivo foi criado
+        # Verifica se o arquivo foi criado (AGORA VAI DAR 201)
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
         # Verifica se o GCS/Storage retornou um URL
         self.assertIn("photo_url", response.data)
 
