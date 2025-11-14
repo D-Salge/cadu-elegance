@@ -489,9 +489,11 @@ class ProfilePhotoUploadTests(APITestCase):
 
         # Verifica se o perfil no banco foi atualizado
         self.barber_profile.refresh_from_db()
+        stored_name = self.barber_profile.profile_picture.name
         self.assertTrue(
-            self.barber_profile.profile_picture.name.endswith("foto_teste.png")
+            stored_name.startswith("barber_photos/")
         )
+        self.assertTrue(stored_name.endswith(".png"))
 
     def test_02_upload_fails_if_file_too_large(self):
         """Testa se a API bloqueia arquivos maiores que 2MB."""

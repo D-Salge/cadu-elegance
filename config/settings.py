@@ -12,8 +12,11 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 
 from pathlib import Path
 from decouple import config
+import base64
+import json
 import os
 import sys
+from django.core.exceptions import ImproperlyConfigured
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -28,7 +31,11 @@ SECRET_KEY = config('SECRET_KEY')
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = config('DEBUG', default=False, cast=bool)
 
-ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='').split(',')
+raw_allowed_hosts = config('ALLOWED_HOSTS', default='')
+ALLOWED_HOSTS = [host.strip() for host in raw_allowed_hosts.split(',') if host.strip()]
+if DEBUG and not ALLOWED_HOSTS:
+    # Em desenvolvimento permitimos localhost automaticamente
+    ALLOWED_HOSTS = ['127.0.0.1', 'localhost']
 
 
 # Application definition
@@ -148,17 +155,43 @@ LOGIN_REDIRECT_URL = '/painel/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media_temp_buffer')
 
 # 2. Pega as chaves (Se faltarem no .env, o config() VAI DAR ERRO. Ãtimo.)
-GCS_KEY_FILE = config('GOOGLE_APPLICATION_CREDENTIALS')
+GCS_KEY_FILE = config('GOOGLE_APPLICATION_CREDENTIALS', default='').strip()
+GCS_KEY_JSON = config('GOOGLE_APPLICATION_CREDENTIALS_JSON', default=None)
 GS_BUCKET_NAME = config('GS_BUCKET_NAME')
 
     # 3. Autentica (CORRIGIDO)
-if os.path.isabs(GCS_KEY_FILE):
-    # O caminho no .env JÁ É absoluto
-    GCS_KEY_FILE_PATH = GCS_KEY_FILE
+tmp_credentials_path = None
+if GCS_KEY_JSON:
+    try:
+        try:
+            parsed_credentials = json.loads(GCS_KEY_JSON)
+        except json.JSONDecodeError:
+            decoded = base64.b64decode(GCS_KEY_JSON)
+            parsed_credentials = json.loads(decoded.decode('utf-8'))
+    except Exception as exc:
+        raise ImproperlyConfigured(
+            "GOOGLE_APPLICATION_CREDENTIALS_JSON deve conter JSON válido "
+            "ou a string Base64 correspondente."
+        ) from exc
+
+    tmp_dir = BASE_DIR / 'tmp'
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+    tmp_credentials_path = tmp_dir / 'gcs-key.json'
+    tmp_credentials_path.write_text(json.dumps(parsed_credentials), encoding='utf-8')
+    GCS_KEY_FILE_PATH = str(tmp_credentials_path)
+elif GCS_KEY_FILE:
+    if os.path.isabs(GCS_KEY_FILE):
+        # O caminho no .env JÁ É absoluto
+        GCS_KEY_FILE_PATH = GCS_KEY_FILE
+    else:
+        # O caminho no .env é relativo (ex: 'gcs-key.json'), junta com o BASE_DIR
+        GCS_KEY_FILE_PATH = os.path.join(BASE_DIR, GCS_KEY_FILE)
 else:
-    # O caminho no .env é relativo (ex: 'gcs-key.json'), junta com o BASE_DIR
-    GCS_KEY_FILE_PATH = os.path.join(BASE_DIR, GCS_KEY_FILE)
-    
+    raise ImproperlyConfigured(
+        "Defina GOOGLE_APPLICATION_CREDENTIALS (caminho) ou "
+        "GOOGLE_APPLICATION_CREDENTIALS_JSON (conteúdo) para o GCS."
+    )
+
 os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = GCS_KEY_FILE_PATH
 
 # 4. FORÃA o Django a usar o GCS para todos os uploads
@@ -185,25 +218,32 @@ STORAGES = {
     },
 }
 
-if 'test' in sys.argv or 'pytest' in sys.argv:
+# Segurança em produção
+SECURE_SSL_REDIRECT = config('SECURE_SSL_REDIRECT', default=not DEBUG, cast=bool)
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+SESSION_COOKIE_SECURE = not DEBUG
+CSRF_COOKIE_SECURE = not DEBUG
+SESSION_COOKIE_SAMESITE = 'Lax'
+CSRF_COOKIE_SAMESITE = 'Lax'
+SECURE_HSTS_SECONDS = config('SECURE_HSTS_SECONDS', default=(0 if DEBUG else 31536000), cast=int)
+SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+SECURE_HSTS_PRELOAD = True
+SECURE_REFERRER_POLICY = 'strict-origin-when-cross-origin'
+SECURE_CONTENT_TYPE_NOSNIFF = True
+X_FRAME_OPTIONS = 'DENY'
+
+raw_csrf_origins = config('CSRF_TRUSTED_ORIGINS', default='')
+CSRF_TRUSTED_ORIGINS = [
+    origin.strip() for origin in raw_csrf_origins.split(',') if origin.strip()
+]
+
+if any(arg in sys.argv for arg in ('test', 'pytest')):
     print(">>> ATENÇÃO: Usando banco de dados SQLite IN-MEMORY para testes. <<<")
 
     # Sobrescreve a configuração do MariaDB
     DATABASES['default'] = {
         'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': ':memory:', # ':memory:' usa a RAM (super rápido)
-    }
-
-    # (Opcional) Desliga o GCS durante os testes para não gastar API
-    DEFAULT_FILE_STORAGE = 'django.core.files.storage.FileSystemStorage'
-    
-if 'test' in sys.argv or 'pytest' in sys.argv:
-    print(">>> ATENÇÃO: Usando banco de dados SQLite IN-MEMORY para testes. <<<")
-
-    # Sobrescreve a configuração do MariaDB
-    DATABASES['default'] = {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': ':memory:',
+        'NAME': ':memory:',  # ':memory:' usa a RAM (super rápido)
     }
 
     # Desliga o GCS durante os testes

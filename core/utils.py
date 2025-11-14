@@ -40,7 +40,7 @@ def enviar_notificacao_whatsapp_barbeiro(appointment, tipo):
     # (Isto é o que vai aparecer no seu terminal)
     
     log_seguro = (
-        f"🤖 [WhatsApp Simulado] Gatilho: '{tipo}'. "
+        f"[WhatsApp Simulado] Gatilho: '{tipo}'. "
         f"Destino: Barbeiro ID {appointment.barber.id}. "
         f"Agendamento ID: {appointment.id}."
     )

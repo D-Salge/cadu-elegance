@@ -1,8 +1,8 @@
 # core/serializers.py
 from rest_framework import serializers
-from .models import Appointment, BarberService, BarberProfile, Bloqueio
-from datetime import datetime, timedelta
+from .models import Appointment, BarberService, Bloqueio
 from django.utils import timezone # Importe o timezone
+from django.db import transaction
 
 class AppointmentSerializer(serializers.ModelSerializer):
     """
@@ -88,6 +88,7 @@ class AppointmentSerializer(serializers.ModelSerializer):
         data['barber_service'] = barber_service
         data['data_hora_fim'] = end_time
         data['status'] = 'pendente'
+        data['_slot_range'] = (start_time, end_time)
 
         return data
 
@@ -95,5 +96,20 @@ class AppointmentSerializer(serializers.ModelSerializer):
         # Remove os IDs que não fazem parte do modelo Appointment
         validated_data.pop('service_id', None) # <-- MUDANÇA AQUI
         validated_data.pop('barber_id', None)
-        
-        return super().create(validated_data)
+        slot_range = validated_data.pop('_slot_range', None)
+
+        with transaction.atomic():
+            if slot_range:
+                start_time, end_time = slot_range
+                overlap_exists = Appointment.objects.select_for_update().filter(
+                    barber=validated_data.get('barber'),
+                    status__in=['pendente', 'confirmado'],
+                    data_hora_inicio__lt=end_time,
+                    data_hora_fim__gt=start_time,
+                ).exists()
+                if overlap_exists:
+                    raise serializers.ValidationError(
+                        "Este horário acabou de ser reservado. Por favor, escolha outro."
+                    )
+
+            return super().create(validated_data)

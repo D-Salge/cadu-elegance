@@ -1,3 +1,4 @@
+import os
 from django.shortcuts import render, redirect, get_object_or_404
 from django.views.generic import ListView, View, TemplateView, DetailView 
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
@@ -5,10 +6,9 @@ from django.contrib.auth.views import LoginView
 from django.contrib import auth
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.signing import Signer, BadSignature
-from .forms import AvailabilityForm, BloqueioForm  # Formulários usados no painel
+from .forms import AvailabilityForm, BloqueioForm , ServiceForm
 from django.urls import reverse_lazy
 from django.http import JsonResponse
-from django.core.files.storage import default_storage
 from datetime import datetime, time, timedelta
 from uuid import uuid4
 from .models import BarberService, Appointment, Availability, BarberProfile, Service, Bloqueio
@@ -96,55 +96,43 @@ class PainelView(BarberRequiredMixin, ListView):
             return Availability.objects.none()
 
     def get_context_data(self, **kwargs):
-        # Adiciona TODOS os dados que o painel precisa
         context = super().get_context_data(**kwargs)
         
         if hasattr(self.request.user, 'barber_profile'):
             profile = self.request.user.barber_profile
             context['barber_profile'] = profile
             
-            # --- CORREÇÃO AQUI ---
-            hoje = timezone.now().date()
+            # ... (lógica de proximos_agendamentos) ...
             
-            # 1. Cria um objeto datetime 'aware' (consciente do fuso horário)
-            #    para o início exato do dia (00:00:00 no fuso do Django - UTC)
-            start_of_today = timezone.make_aware(datetime.combine(hoje, time.min))
-            
-            context['proximos_agendamentos'] = Appointment.objects.filter(
-                barber=profile,
-                # 2. Compara o DateTimeField com o nosso objeto 'aware'
-                data_hora_inicio__gte=start_of_today, 
-                status__in=['pendente', 'confirmado']
-            ).order_by('data_hora_inicio')
-            # --- FIM DA CORREÇÃO ---
-
-            # --- FORMULÁRIOS (SÓ ADICIONA SE NÃO VIER DO POST) ---
+            # --- FORMULÁRIOS ---
             if 'availability_form' not in context:
                 context['availability_form'] = AvailabilityForm()
             if 'bloqueio_form' not in context:
                 context['bloqueio_form'] = BloqueioForm()
+            
+            # 2. ADICIONE O NOVO FORMULÁRIO
+            if 'service_form' not in context:
+                context['service_form'] = ServiceForm()
                 
-            # --- LISTA DE BLOQUEIOS (FOLGAS) ---
+            # --- LISTAS ---
             context['minhas_folgas'] = Bloqueio.objects.filter(
                 barber=profile,
-                data_fim__gte=hoje # Só mostra folgas futuras
+                data_fim__gte=timezone.now().date()
             ).order_by('data_inicio')
+            
+            # 3. ADICIONE A LISTA DE SERVIÇOS GLOBAIS
+            context['servicos_globais'] = Service.objects.all().order_by('nome')
             
         return context
 
     def post(self, request, *args, **kwargs):
-        # Esta função agora precisa de saber QUAL formulário foi enviado.
-        # Vamos usar o nome do botão 'submit' para diferenciar.
-        
-        # Pega o 'profile' ANTES de tudo
         try:
             profile = request.user.barber_profile
         except BarberProfile.DoesNotExist:
             raise PermissionDenied("Perfil de barbeiro não encontrado.")
 
-        context = {} # Contexto para re-renderizar em caso de erro
+        context = {} 
 
-        # --- Se o formulário de BLOCO DE TRABALHO foi enviado ---
         if 'submit_availability' in request.POST:
             form = AvailabilityForm(request.POST)
             if form.is_valid():
@@ -153,9 +141,8 @@ class PainelView(BarberRequiredMixin, ListView):
                 novo_horario.save()
                 return redirect(reverse_lazy('core:painel'))
             else:
-                context['availability_form'] = form # Devolve o form com erros
+                context['availability_form'] = form
 
-        # --- Se o formulário de BLOQUEIO DE FOLGA foi enviado ---
         elif 'submit_bloqueio' in request.POST:
             form = BloqueioForm(request.POST)
             if form.is_valid():
@@ -164,14 +151,24 @@ class PainelView(BarberRequiredMixin, ListView):
                 nova_folga.save()
                 return redirect(reverse_lazy('core:painel'))
             else:
-                context['bloqueio_form'] = form # Devolve o form com erros
+                context['bloqueio_form'] = form
+        
+        # 4. ADICIONE O BLOCO PARA O NOVO FORMULÁRIO
+        elif 'submit_service' in request.POST:
+            form = ServiceForm(request.POST)
+            if form.is_valid():
+                # O serviço é global, não ligado a um barbeiro específico
+                form.save()
+                # (Idealmente, adicionaríamos uma mensagem de sucesso aqui)
+                return redirect(reverse_lazy('core:painel'))
+            else:
+                context['service_form'] = form
 
-        # Se deu erro em algum form, re-renderiza a página
-        # Chamamos self.get_queryset() para carregar 'meus_horarios'
+        # ... (lógica de re-renderização em caso de erro) ...
         self.object_list = self.get_queryset()
         context.update(self.get_context_data(**context))
         return render(request, self.template_name, context)
-
+    
 class DeleteAvailabilityView(BarberRequiredMixin, View):
     """
     Esta view recebe um POST, checa a permissão e deleta o horário.
@@ -504,6 +501,11 @@ class ProfilePhotoUploadView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        safe_original_name = os.path.basename(file_obj.name or '')
+        if not safe_original_name:
+            safe_original_name = f'upload-{uuid4().hex}.jpg'
+        file_obj.name = safe_original_name
+
         try:
             # Atribui o arquivo apenas para aproveitar os validadores do model.
             profile.profile_picture = file_obj
@@ -513,7 +515,12 @@ class ProfilePhotoUploadView(APIView):
 
         # Gera um nome único para evitar colisão nos testes/ambiente real.
         file_obj.seek(0)
-        unique_name = f'barber_photos/{uuid4().hex}-{file_obj.name}'
+        _, extension = os.path.splitext(file_obj.name)
+        extension = extension.lower()
+        allowed_exts = {'.jpg', '.jpeg', '.png'}
+        if extension not in allowed_exts:
+            extension = '.jpg'
+        unique_name = f'barber_photos/{uuid4().hex}{extension}'
         profile.profile_picture.save(unique_name, file_obj, save=False)
 
         profile.save(update_fields=['profile_picture'])

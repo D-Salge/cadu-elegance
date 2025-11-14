@@ -4,7 +4,6 @@
 {% block title %}Agendamento - Cadu Elegance{% endblock %}
 
 {% block scripts %}
-    <script src="https://unpkg.com/imask"></script>
     <script>
         // core/templates/core/homepage.html (dentro do <script>)
 
@@ -50,10 +49,13 @@ document.addEventListener('DOMContentLoaded', () => {
     // Formulário Final
     const clientNameInput = document.getElementById('client-name');
     const clientPhoneInput = document.getElementById('client-phone');
-    const phoneMask = IMask(clientPhoneInput, {
-        mask: [{ mask: '(00) 0000-0000' }, { mask: '(00) 00000-0000' }]
-    });
+    let clientPhoneDigits = '';
     const submitButton = document.getElementById('submit-button');
+
+    clientPhoneInput.addEventListener('input', () => {
+        clientPhoneDigits = clientPhoneInput.value.replace(/[^\d]/g, '').slice(0, 11);
+        clientPhoneInput.value = formatPhoneDisplay(clientPhoneDigits);
+    });
     const submitLoading = document.getElementById('submit-loading');
     const submitError = document.getElementById('submit-error');
     const submitSuccess = document.getElementById('submit-success');
@@ -314,7 +316,7 @@ document.addEventListener('DOMContentLoaded', () => {
             service_id: parseInt(selectedServiceId),
             start_datetime: `${selectedDate}T${selectedSlotTime}`,
             client_name: clientNameInput.value,
-            client_phone: phoneMask.unmaskedValue
+            client_phone: clientPhoneDigits
         };
 
         try {
@@ -346,6 +348,34 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
     
+    function formatPhoneDisplay(digits) {
+        if (!digits) {
+            return '';
+        }
+        const useLongPattern = digits.length > 10;
+        const area = digits.slice(0, 2);
+        const middleEnd = useLongPattern ? 7 : 6;
+        const middle = digits.slice(2, middleEnd);
+        const last = digits.slice(middleEnd, useLongPattern ? 11 : 10);
+        let formatted = '';
+        if (area) {
+            formatted += '(' + area;
+            if (area.length === 2) {
+                formatted += ') ';
+            }
+        }
+        if (middle) {
+            formatted += middle;
+            if (middle.length === (useLongPattern ? 5 : 4) && last) {
+                formatted += '-';
+            }
+        }
+        if (last) {
+            formatted += last;
+        }
+        return formatted;
+    }
+
     // 8. (ALTERADO) Resetar os passos
     function resetSteps(fromStep) {
         if (fromStep <= 1) { // Ao voltar para seleção de barbeiro
@@ -373,6 +403,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (fromStep <= 4) { // Ao clicar no slot
             clientNameInput.value = '';
             clientPhoneInput.value = '';
+            clientPhoneDigits = '';
             submitError.classList.add('d-none');
             submitSuccess.classList.add('d-none');
         }

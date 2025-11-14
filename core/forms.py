@@ -1,5 +1,6 @@
+from datetime import timedelta
 from django import forms
-from .models import Availability, Bloqueio
+from .models import Availability, Bloqueio, Service
 from django.utils import timezone
 
 
@@ -77,3 +78,31 @@ class BloqueioForm(forms.ModelForm):
                     "A data de fim não pode ser anterior à data de início."
                 )
         return cleaned_data
+    
+class ServiceForm(forms.ModelForm):
+    duracao = forms.CharField(
+        label="Duração (HH:MM)",
+        widget=forms.TextInput(attrs={'placeholder': 'Ex: 00:30 ou 01:15'}),
+        help_text="Tempo médio para este serviço."
+    )
+
+    class Meta:
+        model = Service
+        fields = ['nome', 'descricao', 'duracao']
+        labels = {
+            'nome': 'Nome do Serviço',
+            'descricao': 'Descrição (Opcional)',
+        }
+        widgets = {
+            'nome': forms.TextInput(attrs={'placeholder': 'Ex: Corte Masculino'}),
+            'descricao': forms.Textarea(attrs={'rows': 3, 'placeholder': 'Ex: Corte com máquina e tesoura.'}),
+        }
+
+    def clean_duracao(self):
+        # Converte o input "HH:MM" para um objeto timedelta que o Django entende
+        duracao_str = self.cleaned_data.get('duracao')
+        try:
+            h, m = map(int, duracao_str.split(':'))
+            return timedelta(hours=h, minutes=m)
+        except (ValueError, TypeError):
+            raise forms.ValidationError("Formato inválido. Use HH:MM (ex: 00:45 para 45 min).")

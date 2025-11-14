@@ -132,6 +132,58 @@
             </div>
         </div>
 
+        <div class="card shadow-sm mb-4">
+            <div class="card-header bg-info text-dark">
+                <h2 class="h5 mb-0">Criar Novo Tipo de Serviço</h2>
+            </div>
+            <div class="card-body">
+                <p class="small text-muted">Atenção: Serviços criados aqui ficam disponíveis para TODOS os barbeiros escolherem.</p>
+                <form method="POST" action="">
+                    {% csrf_token %}
+                    
+                    {% if service_form.non_field_errors %}
+                        <div class="alert alert-danger p-2 small">
+                            {{ service_form.non_field_errors }}
+                        </div>
+                    {% endif %}
+                    
+                    {% if service_form.duracao.errors %}
+                         <div class="alert alert-danger p-2 small">
+                            {{ service_form.duracao.errors }}
+                        </div>
+                    {% endif %}
+
+                    <div class="mb-2">
+                        <label for="{{ service_form.nome.id_for_label }}" class="form-label">{{ service_form.nome.label }}</label>
+                        {{ service_form.nome.errors }}
+                        <input type="text" name="{{ service_form.nome.name }}" id="{{ service_form.nome.id_for_label }}" 
+                               class="form-control {% if service_form.nome.errors %}is-invalid{% endif %}" 
+                               placeholder="{{ service_form.nome.field.widget.attrs.placeholder }}">
+                    </div>
+                    
+                    <div class="mb-2">
+                        <label for="{{ service_form.duracao.id_for_label }}" class="form-label">{{ service_form.duracao.label }}</label>
+                        <input type="text" name="{{ service_form.duracao.name }}" id="{{ service_form.duracao.id_for_label }}" 
+                               class="form-control {% if service_form.duracao.errors %}is-invalid{% endif %}" 
+                               placeholder="{{ service_form.duracao.field.widget.attrs.placeholder }}">
+                        <small class="form-text text-muted">{{ service_form.duracao.help_text }}</small>
+                    </div>
+
+                    <div class="mb-2">
+                        <label for="{{ service_form.descricao.id_for_label }}" class="form-label">{{ service_form.descricao.label }}</label>
+                        {{ service_form.descricao.errors }}
+                        <textarea name="{{ service_form.descricao.name }}" id="{{ service_form.descricao.id_for_label }}" 
+                                  class="form-control {% if service_form.descricao.errors %}is-invalid{% endif %}" 
+                                  rows="3" 
+                                  placeholder="{{ service_form.descricao.field.widget.attrs.placeholder }}"></textarea>
+                    </div>
+                    
+                    <button type="submit" name="submit_service" class="btn btn-info w-100 mt-2">Criar Serviço</button>
+                </form>
+            </div>
+        </div>
+        <div class="card shadow-sm">
+
         <div class="card shadow-sm">
             <div class="card-header bg-dark text-white">
                 <h2 class="h5 mb-0">Minha Agenda Programada</h2>
@@ -181,6 +233,22 @@
                 {% else %}
                      <div class="alert alert-secondary p-2">Nenhuma folga futura programada.</div>
                 {% endif %}
+
+                <hr>
+                <h6 class="text-muted mt-3">SERVIÇOS GLOBAIS (Disponíveis)</h6>
+                {% if servicos_globais %}
+                    <ul class="list-group list-group-flush">
+                        {% for service in servicos_globais %}
+                            <li class="list-group-item d-flex justify-content-between align-items-center ps-0">
+                                {{ service.nome }}
+                                <span class="badge bg-secondary rounded-pill">{{ service.friendly_duration }}</span>
+                            </li>
+                        {% endfor %}
+                    </ul>
+                {% else %}
+                    <div class="alert alert-secondary p-2">Nenhum serviço cadastrado.</div>
+                {% endif %}
+                </div>
             </div>
         </div>
     </div>
