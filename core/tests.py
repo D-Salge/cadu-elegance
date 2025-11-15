@@ -14,6 +14,7 @@ from .models import (
 from django.utils import timezone
 from datetime import timedelta, time, datetime
 from django.core.files.uploadedfile import SimpleUploadedFile
+from decimal import Decimal
 import io
 from PIL import Image
 
@@ -339,6 +340,10 @@ class PainelViewTests(TestCase):
         )
 
         self.painel_url = reverse("core:painel")
+        self.service = Service.objects.create(nome="Corte Básico", duracao=timedelta(minutes=30))
+        self.barber_service = BarberService.objects.create(
+            barber=self.barber_profile, service=self.service, preco=Decimal('50.00')
+        )
 
     # --- Testes de Acesso (Segurança) ---
 
@@ -439,32 +444,45 @@ class PainelViewTests(TestCase):
         )
     
     def test_07_barber_can_add_new_service(self):
-        """ Testa se o barbeiro consegue criar um novo Serviço (ex: Platinado). """
+        """Testa se o barbeiro consegue criar um novo Serviço já associado a ele."""
         self.client.login(username='barbeiro_painel', password='123')
-        
-        # Contagem de serviços ANTES do POST
         service_count_before = Service.objects.count()
-        
         form_data = {
             'nome': 'Platinado',
             'descricao': 'Descoloração e tonalização',
-            'duracao': '02:30', # 2 horas e 30 minutos
-            'submit_service': '1' # O nome do botão que a view espera
+            'duracao': '02:30',
+            'preco': '150.00',
+            'submit_service': '1'
         }
-        
         response = self.client.post(self.painel_url, form_data)
-        
-        # 302 (Redirect) significa que o POST foi bem-sucedido
         self.assertEqual(response.status_code, 302)
         self.assertRedirects(response, self.painel_url)
-        
-        # Verifica se o novo serviço foi realmente criado no banco
         self.assertEqual(Service.objects.count(), service_count_before + 1)
-        self.assertTrue(Service.objects.filter(nome='Platinado').exists())
-        
-        # Verifica se a duração foi convertida corretamente (2h30 = 150 min)
         novo_servico = Service.objects.get(nome='Platinado')
         self.assertEqual(novo_servico.duracao, timedelta(minutes=150))
+        self.assertTrue(
+            BarberService.objects.filter(
+                barber=self.barber_profile,
+                service=novo_servico,
+                preco=Decimal('150.00')
+            ).exists()
+        )
+        
+    def test_08_panel_lists_future_appointments(self):
+        """Garante que agendamentos futuros aparecem no painel."""
+        future_start = timezone.now() + timedelta(days=1)
+        Appointment.objects.create(
+            barber=self.barber_profile,
+            barber_service=self.barber_service,
+            cliente_nome="Cliente Painel",
+            cliente_telefone="11999999999",
+            data_hora_inicio=future_start,
+            data_hora_fim=future_start + timedelta(minutes=30),
+            status="pendente",
+        )
+        self.client.login(username="barbeiro_painel", password="123")
+        response = self.client.get(self.painel_url)
+        self.assertContains(response, "Cliente Painel")
 
 
 class ProfilePhotoUploadTests(APITestCase):

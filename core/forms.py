@@ -82,10 +82,16 @@ class BloqueioForm(forms.ModelForm):
 class ServiceForm(forms.ModelForm):
     duracao = forms.CharField(
         label="Duração (HH:MM)",
-        widget=forms.TextInput(attrs={'placeholder': 'Ex: 00:30 ou 01:15'}),
+        widget=forms.TextInput(attrs={'placeholder': 'Ex: 00:30 ou 01:15', 'class': 'form-control'}),
         help_text="Tempo médio para este serviço."
     )
-
+    preco = forms.DecimalField(
+        label="Preço inicial",
+        max_digits=8,
+        decimal_places=2,
+        min_value=0,
+        widget=forms.NumberInput(attrs={'placeholder': 'Ex: 75.00', 'class': 'form-control', 'step': '0.01'})
+    )
     class Meta:
         model = Service
         fields = ['nome', 'descricao', 'duracao']
@@ -94,12 +100,10 @@ class ServiceForm(forms.ModelForm):
             'descricao': 'Descrição (Opcional)',
         }
         widgets = {
-            'nome': forms.TextInput(attrs={'placeholder': 'Ex: Corte Masculino'}),
-            'descricao': forms.Textarea(attrs={'rows': 3, 'placeholder': 'Ex: Corte com máquina e tesoura.'}),
+            'nome': forms.TextInput(attrs={'placeholder': 'Ex: Corte Masculino', 'class': 'form-control'}),
+            'descricao': forms.Textarea(attrs={'rows': 3, 'placeholder': 'Ex: Corte com máquina e tesoura.', 'class': 'form-control'}),
         }
-
     def clean_duracao(self):
-        # Converte o input "HH:MM" para um objeto timedelta que o Django entende
         duracao_str = self.cleaned_data.get('duracao')
         try:
             h, m = map(int, duracao_str.split(':'))

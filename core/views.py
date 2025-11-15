@@ -102,7 +102,14 @@ class PainelView(BarberRequiredMixin, ListView):
             profile = self.request.user.barber_profile
             context['barber_profile'] = profile
             
-            # ... (lógica de proximos_agendamentos) ...
+            hoje = timezone.localdate()
+            tz = timezone.get_current_timezone()
+            start_of_today = timezone.make_aware(datetime.combine(hoje, time.min), tz)
+            context['proximos_agendamentos'] = Appointment.objects.filter(
+                barber=profile,
+                data_hora_inicio__gte=start_of_today,
+                status__in=['pendente', 'confirmado'],
+            ).select_related('barber_service', 'barber_service__service').order_by('data_hora_inicio')
             
             # --- FORMULÁRIOS ---
             if 'availability_form' not in context:
@@ -157,9 +164,12 @@ class PainelView(BarberRequiredMixin, ListView):
         elif 'submit_service' in request.POST:
             form = ServiceForm(request.POST)
             if form.is_valid():
-                # O serviço é global, não ligado a um barbeiro específico
-                form.save()
-                # (Idealmente, adicionaríamos uma mensagem de sucesso aqui)
+                novo_servico = form.save()
+                BarberService.objects.update_or_create(
+                    barber=profile,
+                    service=novo_servico,
+                    defaults={'preco': form.cleaned_data['preco']}
+                )
                 return redirect(reverse_lazy('core:painel'))
             else:
                 context['service_form'] = form

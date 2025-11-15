@@ -1,0 +1,164 @@
+/* --- 1. Importação de Fontes (Google Fonts) --- */
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=Lato:wght@400;700&display=swap');
+
+/* Playfair Display: Uma fonte serifada, elegante e clássica para títulos (Elegance).
+   Lato: Uma fonte sans-serif limpa e moderna para todo o texto (Clareza).
+*/
+
+/* --- 2. Paleta de Cores (CSS Variables) --- */
+:root {
+    --cor-primaria: #1a1a1a;   /* Um preto/carvão profundo, em vez de 'bg-dark' */
+    --cor-secundaria: #f0f0f0; /* Um cinza-claro/fundo "limpo" */
+    --cor-acento: #c6a468;    /* Um dourado/bronze para botões e destaques */
+    --cor-texto: #333;
+    --cor-texto-claro: #f8f9fa;
+    
+    --fonte-titulo: 'Playfair Display', serif;
+    --fonte-corpo: 'Lato', sans-serif;
+}
+
+/* --- 3. Overrides do Bootstrap (A nossa "marca") --- */
+body {
+    font-family: var(--fonte-corpo);
+    background-color: var(--cor-secundaria);
+    color: var(--cor-texto);
+}
+
+h1, h2, h3, h4, h5, h6, .navbar-brand {
+    font-family: var(--fonte-titulo);
+    font-weight: 700;
+}
+
+/* Centraliza o 'Cadu Elegance' (como fizemos), mas com o nosso CSS */
+.navbar-brand.navbar-brand-centered {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+}
+
+/* Navbar personalizada */
+.navbar-dark.bg-primary-custom {
+    background-color: var(--cor-primaria) !important;
+}
+
+/* Botões personalizados */
+.btn-primary {
+    background-color: var(--cor-acento);
+    border-color: var(--cor-acento);
+    color: var(--cor-primaria);
+    font-weight: 700;
+}
+.btn-primary:hover {
+    background-color: #b0915a; /* Um dourado mais escuro */
+    border-color: #b0915a;
+    color: var(--cor-primaria);
+}
+.btn-outline-primary {
+    border-color: var(--cor-acento);
+    color: var(--cor-acento);
+}
+.btn-outline-primary:hover,
+.btn-outline-primary.active {
+    background-color: var(--cor-acento);
+    border-color: var(--cor-acento);
+    color: var(--cor-primaria) !important;
+}
+
+/* --- 4. Estilos da Homepage (Barbeiros e Slots) --- */
+
+/* Esconde os passos seguintes (transição) */
+#booking-steps {
+    max-height: 0;
+    opacity: 0;
+    overflow: hidden;
+    transition: max-height 0.7s ease-in-out, opacity 0.5s ease-in-out 0.2s;
+}
+#booking-steps.visible {
+    max-height: 1500px; /* Altura suficiente para o formulário */
+    opacity: 1;
+}
+
+/* Círculos dos Barbeiros */
+.barber-choice {
+    cursor: pointer;
+    transition: transform 0.3s ease, opacity 0.5s ease;
+    text-align: center;
+}
+.barber-photo-container {
+    width: 150px;
+    height: 150px;
+    border-radius: 50%;
+    overflow: hidden;
+    border: 4px solid #fff; /* Borda branca */
+    box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+    transition: all 0.3s ease;
+}
+.barber-photo {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+.barber-photo-fallback {
+    width: 150px;
+    height: 150px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: #e9ecef;
+    color: #495057;
+    font-size: 1.2rem;
+    font-family: var(--fonte-titulo);
+}
+
+/* Efeito de seleção do Barbeiro */
+.barber-list-selecting .barber-choice {
+    opacity: 0.5;
+}
+.barber-list-selecting .barber-choice:hover {
+    opacity: 1;
+    transform: scale(1.05);
+}
+.barber-list-selecting .barber-choice.selected {
+    opacity: 1;
+    transform: scale(1.1);
+}
+
+/* Carrossel de Data */
+.date-carousel-container {
+    overflow-x: auto;
+    white-space: nowrap;
+    padding-bottom: 15px;
+    scrollbar-width: thin; /* Firefox */
+}
+.date-carousel { display: inline-flex; gap: 10px; padding: 5px 0; }
+.date-slot {
+    flex: 0 0 auto;
+    width: 75px; /* Tamanho consistente */
+    padding: 10px 5px;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    background-color: #fff;
+    text-align: center;
+}
+.date-slot:hover { background-color: #fdfdfd; border-color: #ccc; }
+.date-slot.selected {
+    background-color: var(--cor-primaria);
+    color: var(--cor-texto-claro);
+    border-color: var(--cor-primaria);
+}
+.date-slot .weekday { 
+    font-size: 0.8em; 
+    font-weight: 700; 
+    text-transform: uppercase; 
+    color: #888;
+}
+.date-slot.selected .weekday { color: var(--cor-texto-claro); }
+.date-slot .day { font-size: 1.2em; font-weight: 700; }
+
+/* Botões de Slot de Horário */
+.slot-btn {
+    min-width: 90px;
+    font-weight: 700;
+}

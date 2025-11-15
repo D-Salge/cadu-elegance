@@ -3,38 +3,72 @@
 {% block title %}Painel de Controle{% endblock %}
 
 {% block content %}
-<div class="row">
 
-    <div class="col-lg-7 mb-4">
-        <div class="card shadow-sm">
-            <div class="card-header bg-dark text-white">
-                <h2 class="h5 mb-0">Próximos Agendamentos</h2>
-            </div>
+<!-- 
+    Refatoração de UX:
+    Usamos Abas (Tabs) para separar as Ações (ver agendamentos)
+    da Gestão (mudar horários, folgas, serviços).
+    Isso limpa a interface e reduz a carga cognitiva.
+-->
+
+<div class="mb-4">
+    <h3>Painel de Controle</h3>
+    <p class="lead text-muted">Olá, {{ barber_profile.nome_exibicao }}. Gestão dos seus agendamentos e horários.</p>
+</div>
+
+<!-- 1. Os Botões de Navegação das Abas -->
+<ul class="nav nav-tabs nav-fill mb-3" id="painelTab" role="tablist">
+    <li class="nav-item" role="presentation">
+        <button class="nav-link active" id="agendamentos-tab" data-bs-toggle="tab" data-bs-target="#agendamentos-pane" type="button" role="tab">
+            Próximos Agendamentos 
+            <span class="badge bg-danger rounded-pill">{{ proximos_agendamentos|length }}</span>
+        </button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link" id="horarios-tab" data-bs-toggle="tab" data-bs-target="#horarios-pane" type="button" role="tab">
+            Gerir Horários
+        </button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link" id="folgas-tab" data-bs-toggle="tab" data-bs-target="#folgas-pane" type="button" role="tab">
+            Gerir Folgas
+        </button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link" id="servicos-tab" data-bs-toggle="tab" data-bs-target="#servicos-pane" type="button" role="tab">
+            Gerir Serviços
+        </button>
+    </li>
+</ul>
+
+<!-- 2. O Conteúdo das Abas -->
+<div class="tab-content" id="painelTabContent">
+
+    <!-- ABA 1: Próximos Agendamentos (O Padrão) -->
+    <div class="tab-pane fade show active" id="agendamentos-pane" role="tabpanel">
+        <div class="card shadow-sm border-0">
             <div class="card-body">
+                <h4 class="card-title mb-3">Agendamentos Pendentes e Confirmados</h4>
                 {% if proximos_agendamentos %}
                     <div class="list-group">
                         {% for appt in proximos_agendamentos %}
-                            <div class="list-group-item list-group-item-action flex-column align-items-start mb-2 border-start-4 {% if appt.status == 'pendente' %}border-warning{% else %}border-success{% endif %}">
+                            <!-- Usamos 'border-start-4' do Bootstrap para a cor lateral -->
+                            <div class="list-group-item list-group-item-action flex-column align-items-start mb-2 border-0 border-start-4 {% if appt.status == 'pendente' %}border-warning{% else %}border-success{% endif %} shadow-sm">
                                 <div class="d-flex w-100 justify-content-between">
-                                    <h5 class="mb-1">
-                                        {{ appt.cliente_nome }}
-                                    </h5>
-                                    <small>
-                                        {{ appt.data_hora_inicio|date:"d/m, D" }}
-                                    </small>
+                                    <h5 class="mb-1 h6 fw-bold">{{ appt.cliente_nome }}</h5>
+                                    <small class="text-muted">{{ appt.data_hora_inicio|date:"d/m, D" }}</small>
                                 </div>
-                                <p class="mb-1">
+                                <p class="mb-1 small">
                                     <strong>Serviço:</strong> {{ appt.barber_service.service.nome }} ({{ appt.barber_service.service.friendly_duration }})
                                     <br>
                                     <strong>Horário:</strong> {{ appt.data_hora_inicio|time:"H:i" }} - {{ appt.data_hora_fim|time:"H:i" }}
                                     <br>
                                     <strong>Telefone:</strong> {{ appt.cliente_telefone }}
                                 </p>
-                                <div class="d-flex w-100 justify-content-between align-items-center">
-                                    <span class="badge {% if appt.status == 'pendente' %}bg-warning text-dark{% else %}bg-success{% endif %}">
+                                <div class="d-flex w-100 justify-content-between align-items-center mt-2">
+                                    <span class="badge fs-6 {% if appt.status == 'pendente' %}bg-warning text-dark{% else %}bg-success{% endif %}">
                                         {{ appt.get_status_display }}
                                     </span>
-                                    
                                     <div class="text-end">
                                         {% if appt.status == 'pendente' %}
                                             <form method="POST" action="{% url 'core:confirm_appointment' appt.pk %}" class="d-inline">
@@ -42,11 +76,10 @@
                                                 <button type="submit" class="btn btn-sm btn-success">Confirmar</button>
                                             </form>
                                         {% endif %}
-                                        
                                         {% if appt.status != 'cancelado' %}
                                             <form method="POST" action="{% url 'core:cancel_appointment' appt.pk %}" class="d-inline">
                                                 {% csrf_token %}
-                                                <button type="submit" onclick="return confirm('Tem certeza?');" class="btn btn-sm btn-danger">Cancelar</button>
+                                                <button type="submit" onclick="return confirm('Tem certeza?');" class="btn btn-sm btn-outline-danger">Cancelar</button>
                                             </form>
                                         {% endif %}
                                     </div>
@@ -55,202 +88,217 @@
                         {% endfor %}
                     </div>
                 {% else %}
-                    <div class="alert alert-info">Nenhum agendamento futuro encontrado.</div>
+                    <div class="alert alert-success text-center">Nenhum agendamento futuro encontrado. Agenda limpa!</div>
                 {% endif %}
             </div>
         </div>
     </div>
 
-    <div class="col-lg-5 mb-4">
-        
-        <div class="card shadow-sm mb-4">
-            <div class="card-header bg-dark text-white">
-                <h2 class="h5 mb-0">Adicionar Bloco de Trabalho</h2>
-            </div>
-            <div class="card-body">
-                <form method="POST" action="">
-
-                    {% if availability_form.non_field_errors %}
-                        <div class="alert alert-danger p-2 small">
-                            {{ availability_form.non_field_errors }}
-                        </div>
-                    {% endif %}
-                    {% csrf_token %}
-                    {% csrf_token %}
-                    <div class="mb-2">
-                        <label for="{{ availability_form.dia_da_semana.id_for_label }}" class="form-label">{{ availability_form.dia_da_semana.label }}</label>
-                        {{ availability_form.dia_da_semana.errors }}
-                        <select name="{{ availability_form.dia_da_semana.name }}" id="{{ availability_form.dia_da_semana.id_for_label }}" class="form-select {% if availability_form.dia_da_semana.errors %}is-invalid{% endif %}">
-                            {% for value, text in availability_form.dia_da_semana.field.choices %}
-                                <option value="{{ value }}">{{ text }}</option>
-                            {% endfor %}
-                        </select>
+    <!-- ABA 2: Gerir Horários de Trabalho -->
+    <div class="tab-pane fade" id="horarios-pane" role="tabpanel">
+        <div class="row">
+            <!-- Formulário -->
+            <div class="col-md-6 mb-4">
+                <div class="card shadow-sm border-0">
+                    <div class="card-header">
+                        <h5 class="mb-0">Adicionar Bloco de Trabalho (Semanal)</h5>
                     </div>
-                    <div class="row">
-                        <div class="col-6 mb-2">
-                            <label for="{{ availability_form.hora_inicio.id_for_label }}" class="form-label">{{ availability_form.hora_inicio.label }}</label>
-                            {{ availability_form.hora_inicio.errors }}
-                            <input type="time" name="{{ availability_form.hora_inicio.name }}" id="{{ availability_form.hora_inicio.id_for_label }}" class="form-control {% if availability_form.hora_inicio.errors %}is-invalid{% endif %}" step="900">
-                        </div>
-                        <div class="col-6 mb-2">
-                            <label for="{{ availability_form.hora_fim.id_for_label }}" class="form-label">{{ availability_form.hora_fim.label }}</label>
-                            {{ availability_form.hora_fim.errors }}
-                            <input type="time" name="{{ availability_form.hora_fim.name }}" id="{{ availability_form.hora_fim.id_for_label }}" class="form-control {% if availability_form.hora_fim.errors %}is-invalid{% endif %}" step="900">
-                        </div>
-                    </div>
-                    <button type="submit" name="submit_availability" class="btn btn-primary w-100 mt-2">Adicionar Horário</button>
-                </form>
-            </div>
-        </div>
-
-        <div class="card shadow-sm mb-4">
-            <div class="card-header bg-secondary text-white">
-                <h2 class="h5 mb-0">Adicionar Folga / Férias</h2>
-            </div>
-            <div class="card-body">
-                <form method="POST" action="">
-                    {% csrf_token %}
-                    <div class="row">
-                        <div class="col-6 mb-2">
-                            <label for="{{ bloqueio_form.data_inicio.id_for_label }}" class="form-label">{{ bloqueio_form.data_inicio.label }}</label>
-                            {{ bloqueio_form.data_inicio.errors }}
-                            <input type="date" name="{{ bloqueio_form.data_inicio.name }}" id="{{ bloqueio_form.data_inicio.id_for_label }}" class="form-control {% if bloqueio_form.data_inicio.errors %}is-invalid{% endif %}">
-                        </div>
-                        <div class="col-6 mb-2">
-                            <label for="{{ bloqueio_form.data_fim.id_for_label }}" class="form-label">{{ bloqueio_form.data_fim.label }}</label>
-                            {{ bloqueio_form.data_fim.errors }}
-                            <input type="date" name="{{ bloqueio_form.data_fim.name }}" id="{{ bloqueio_form.data_fim.id_for_label }}" class="form-control {% if bloqueio_form.data_fim.errors %}is-invalid{% endif %}">
-                        </div>
-                    </div>
-                    <div class="mb-2">
-                        <label for="{{ bloqueio_form.motivo.id_for_label }}" class="form-label">{{ bloqueio_form.motivo.label }}</label>
-                        {{ bloqueio_form.motivo.errors }}
-                        <input type="text" name="{{ bloqueio_form.motivo.name }}" id="{{ bloqueio_form.motivo.id_for_label }}" class="form-control {% if bloqueio_form.motivo.errors %}is-invalid{% endif %}" placeholder="Ex: Férias">
-                    </div>
-                    <button type="submit" name="submit_bloqueio" class="btn btn-secondary w-100 mt-2">Salvar Folga</button>
-                </form>
-            </div>
-        </div>
-
-        <div class="card shadow-sm mb-4">
-            <div class="card-header bg-info text-dark">
-                <h2 class="h5 mb-0">Criar Novo Tipo de Serviço</h2>
-            </div>
-            <div class="card-body">
-                <p class="small text-muted">Atenção: Serviços criados aqui ficam disponíveis para TODOS os barbeiros escolherem.</p>
-                <form method="POST" action="">
-                    {% csrf_token %}
-                    
-                    {% if service_form.non_field_errors %}
-                        <div class="alert alert-danger p-2 small">
-                            {{ service_form.non_field_errors }}
-                        </div>
-                    {% endif %}
-                    
-                    {% if service_form.duracao.errors %}
-                         <div class="alert alert-danger p-2 small">
-                            {{ service_form.duracao.errors }}
-                        </div>
-                    {% endif %}
-
-                    <div class="mb-2">
-                        <label for="{{ service_form.nome.id_for_label }}" class="form-label">{{ service_form.nome.label }}</label>
-                        {{ service_form.nome.errors }}
-                        <input type="text" name="{{ service_form.nome.name }}" id="{{ service_form.nome.id_for_label }}" 
-                               class="form-control {% if service_form.nome.errors %}is-invalid{% endif %}" 
-                               placeholder="{{ service_form.nome.field.widget.attrs.placeholder }}">
-                    </div>
-                    
-                    <div class="mb-2">
-                        <label for="{{ service_form.duracao.id_for_label }}" class="form-label">{{ service_form.duracao.label }}</label>
-                        <input type="text" name="{{ service_form.duracao.name }}" id="{{ service_form.duracao.id_for_label }}" 
-                               class="form-control {% if service_form.duracao.errors %}is-invalid{% endif %}" 
-                               placeholder="{{ service_form.duracao.field.widget.attrs.placeholder }}">
-                        <small class="form-text text-muted">{{ service_form.duracao.help_text }}</small>
-                    </div>
-
-                    <div class="mb-2">
-                        <label for="{{ service_form.descricao.id_for_label }}" class="form-label">{{ service_form.descricao.label }}</label>
-                        {{ service_form.descricao.errors }}
-                        <textarea name="{{ service_form.descricao.name }}" id="{{ service_form.descricao.id_for_label }}" 
-                                  class="form-control {% if service_form.descricao.errors %}is-invalid{% endif %}" 
-                                  rows="3" 
-                                  placeholder="{{ service_form.descricao.field.widget.attrs.placeholder }}"></textarea>
-                    </div>
-                    
-                    <button type="submit" name="submit_service" class="btn btn-info w-100 mt-2">Criar Serviço</button>
-                </form>
-            </div>
-        </div>
-        <div class="card shadow-sm">
-
-        <div class="card shadow-sm">
-            <div class="card-header bg-dark text-white">
-                <h2 class="h5 mb-0">Minha Agenda Programada</h2>
-            </div>
-            <div class="card-body">
-                
-                <h6 class="text-muted">HORÁRIOS DE TRABALHO (semanal)</h6>
-                {% if meus_horarios %}
-                    <ul class="list-group list-group-flush mb-3">
-                        {% for horario in meus_horarios %}
-                            <li class="list-group-item d-flex justify-content-between align-items-center ps-0">
-                                <div>
-                                    <strong>{{ horario.get_dia_da_semana_display }}:</strong>
-                                    {{ horario.hora_inicio|time:"H:i" }} - {{ horario.hora_fim|time:"H:i" }}
+                    <div class="card-body">
+                        <form method="POST" action="">
+                            {% if availability_form.non_field_errors %}
+                                <div class="alert alert-danger p-2 small">{{ availability_form.non_field_errors }}</div>
+                            {% endif %}
+                            {% csrf_token %}
+                            <div class="mb-3">
+                                <label for="{{ availability_form.dia_da_semana.id_for_label }}" class="form-label">{{ availability_form.dia_da_semana.label }}</label>
+                                <select name="{{ availability_form.dia_da_semana.name }}" id="{{ availability_form.dia_da_semana.id_for_label }}" class="form-select">
+                                    {% for value, text in availability_form.dia_da_semana.field.choices %}
+                                        <option value="{{ value }}">{{ text }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="row">
+                                <div class="col-6 mb-3">
+                                    <label for="{{ availability_form.hora_inicio.id_for_label }}" class="form-label">{{ availability_form.hora_inicio.label }}</label>
+                                    <input type="time" name="{{ availability_form.hora_inicio.name }}" id="{{ availability_form.hora_inicio.id_for_label }}" class="form-control" step="900">
                                 </div>
-                                <form method="POST" action="{% url 'core:delete_availability' horario.pk %}">
-                                    {% csrf_token %}
-                                    <button type="submit" onclick="return confirm('Tem certeza?');" class="btn btn-sm btn-outline-danger">X</button>
-                                </form>
-                            </li>
-                        {% endfor %}
-                    </ul>
-                {% else %}
-                    <div class="alert alert-secondary p-2">Nenhum bloco de horário cadastrado.</div>
-                {% endif %}
-
-                <h6 class="text-muted mt-3">FOLGAS E FÉRIAS (datas)</h6>
-                {% if minhas_folgas %}
-                    <ul class="list-group list-group-flush">
-                        {% for folga in minhas_folgas %}
-                            <li class="list-group-item d-flex justify-content-between align-items-center ps-0">
-                                <div>
-                                    {% if folga.data_inicio == folga.data_fim %}
-                                        <strong>{{ folga.data_inicio|date:"d/m/Y" }}</strong>
-                                    {% else %}
-                                        <strong>{{ folga.data_inicio|date:"d/m" }}</strong> até <strong>{{ folga.data_fim|date:"d/m/Y" }}</strong>
-                                    {% endif %}
-                                    <small class="d-block text-muted">{{ folga.motivo|default:"" }}</small>
+                                <div class="col-6 mb-3">
+                                    <label for="{{ availability_form.hora_fim.id_for_label }}" class="form-label">{{ availability_form.hora_fim.label }}</label>
+                                    <input type="time" name="{{ availability_form.hora_fim.name }}" id="{{ availability_form.hora_fim.id_for_label }}" class="form-control" step="900">
                                 </div>
-                                <form method="POST" action="{% url 'core:delete_bloqueio' folga.pk %}">
-                                    {% csrf_token %}
-                                    <button type="submit" onclick="return confirm('Tem certeza?');" class="btn btn-sm btn-outline-danger">X</button>
-                                </form>
-                            </li>
-                        {% endfor %}
-                    </ul>
-                {% else %}
-                     <div class="alert alert-secondary p-2">Nenhuma folga futura programada.</div>
-                {% endif %}
-
-                <hr>
-                <h6 class="text-muted mt-3">SERVIÇOS GLOBAIS (Disponíveis)</h6>
-                {% if servicos_globais %}
-                    <ul class="list-group list-group-flush">
-                        {% for service in servicos_globais %}
-                            <li class="list-group-item d-flex justify-content-between align-items-center ps-0">
-                                {{ service.nome }}
-                                <span class="badge bg-secondary rounded-pill">{{ service.friendly_duration }}</span>
-                            </li>
-                        {% endfor %}
-                    </ul>
-                {% else %}
-                    <div class="alert alert-secondary p-2">Nenhum serviço cadastrado.</div>
-                {% endif %}
+                            </div>
+                            <button type="submit" name="submit_availability" class="btn btn-primary w-100">Adicionar Horário</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+            <!-- Lista -->
+            <div class="col-md-6 mb-4">
+                <div class="card shadow-sm border-0">
+                    <div class="card-header">
+                        <h5 class="mb-0">Meus Horários Atuais</h5>
+                    </div>
+                    <div class="card-body">
+                        {% if meus_horarios %}
+                            <ul class="list-group list-group-flush">
+                                {% for horario in meus_horarios %}
+                                    <li class="list-group-item d-flex justify-content-between align-items-center px-0">
+                                        <div>
+                                            <strong>{{ horario.get_dia_da_semana_display }}:</strong>
+                                            {{ horario.hora_inicio|time:"H:i" }} - {{ horario.hora_fim|time:"H:i" }}
+                                        </div>
+                                        <form method="POST" action="{% url 'core:delete_availability' horario.pk %}">
+                                            {% csrf_token %}
+                                            <button type="submit" onclick="return confirm('Tem certeza?');" class="btn btn-sm btn-outline-danger">X</button>
+                                        </form>
+                                    </li>
+                                {% endfor %}
+                            </ul>
+                        {% else %}
+                            <div class="alert alert-secondary p-2">Nenhum bloco de horário cadastrado.</div>
+                        {% endif %}
+                    </div>
                 </div>
             </div>
         </div>
     </div>
+
+    <!-- ABA 3: Gerir Folgas e Férias -->
+    <div class="tab-pane fade" id="folgas-pane" role="tabpanel">
+        <div class="row">
+            <!-- Formulário -->
+            <div class="col-md-6 mb-4">
+                <div class="card shadow-sm border-0">
+                    <div class="card-header">
+                        <h5 class="mb-0">Adicionar Folga / Férias</h5>
+                    </div>
+                    <div class="card-body">
+                        <form method="POST" action="">
+                            {% csrf_token %}
+                            <div class="row">
+                                <div class="col-6 mb-3">
+                                    <label for="{{ bloqueio_form.data_inicio.id_for_label }}" class="form-label">{{ bloqueio_form.data_inicio.label }}</label>
+                                    <input type="date" name="{{ bloqueio_form.data_inicio.name }}" id="{{ bloqueio_form.data_inicio.id_for_label }}" class="form-control">
+                                </div>
+                                <div class="col-6 mb-3">
+                                    <label for="{{ bloqueio_form.data_fim.id_for_label }}" class="form-label">{{ bloqueio_form.data_fim.label }}</label>
+                                    <input type="date" name="{{ bloqueio_form.data_fim.name }}" id="{{ bloqueio_form.data_fim.id_for_label }}" class="form-control">
+                                </div>
+                            </div>
+                            <div class="mb-3">
+                                <label for="{{ bloqueio_form.motivo.id_for_label }}" class="form-label">{{ bloqueio_form.motivo.label }}</label>
+                                <input type="text" name="{{ bloqueio_form.motivo.name }}" id="{{ bloqueio_form.motivo.id_for_label }}" class="form-control" placeholder="Ex: Férias">
+                            </div>
+                            <button type="submit" name="submit_bloqueio" class="btn btn-primary w-100">Salvar Folga</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+            <!-- Lista -->
+            <div class="col-md-6 mb-4">
+                <div class="card shadow-sm border-0">
+                    <div class="card-header">
+                        <h5 class="mb-0">Minhas Folgas Programadas</h5>
+                    </div>
+                    <div class="card-body">
+                        {% if minhas_folgas %}
+                            <ul class="list-group list-group-flush">
+                                {% for folga in minhas_folgas %}
+                                    <li class="list-group-item d-flex justify-content-between align-items-center px-0">
+                                        <div>
+                                            {% if folga.data_inicio == folga.data_fim %}
+                                                <strong>{{ folga.data_inicio|date:"d/m/Y" }}</strong>
+                                            {% else %}
+                                                <strong>{{ folga.data_inicio|date:"d/m" }}</strong> até <strong>{{ folga.data_fim|date:"d/m/Y" }}</strong>
+                                            {% endif %}
+                                            <small class="d-block text-muted">{{ folga.motivo|default:"" }}</small>
+                                        </div>
+                                        <form method="POST" action="{% url 'core:delete_bloqueio' folga.pk %}">
+                                            {% csrf_token %}
+                                            <button type="submit" onclick="return confirm('Tem certeza?');" class="btn btn-sm btn-outline-danger">X</button>
+                                        </form>
+                                    </li>
+                                {% endfor %}
+                            </ul>
+                        {% else %}
+                            <div class="alert alert-secondary p-2">Nenhuma folga futura programada.</div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- ABA 4: Gerir Tipos de Serviço -->
+    <div class="tab-pane fade" id="servicos-pane" role="tabpanel">
+        <div class="row">
+            <!-- Formulário -->
+            <div class="col-md-6 mb-4">
+                <div class="card shadow-sm border-0">
+                    <div class="card-header">
+                        <h5 class="mb-0">Criar Novo Tipo de Serviço</h5>
+                    </div>
+                    <div class="card-body">
+                        <p class="small text-muted">Atenção: Serviços criados aqui ficam disponíveis para TODOS os barbeiros escolherem.</p>
+                        <form method="POST" action="">
+                            {% csrf_token %}
+                            
+                            {% if service_form.non_field_errors %}
+                                <div class="alert alert-danger p-2 small">{{ service_form.non_field_errors }}</div>
+                            {% endif %}
+                            
+                            <div class="mb-3">
+                                <label for="{{ service_form.nome.id_for_label }}" class="form-label">{{ service_form.nome.label }}</label>
+                                {{ service_form.nome.errors }}
+                                {{ service_form.nome }}
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label for="{{ service_form.duracao.id_for_label }}" class="form-label">{{ service_form.duracao.label }}</label>
+                                {{ service_form.duracao.errors }}
+                                {{ service_form.duracao }}
+                                <small class="form-text text-muted">{{ service_form.duracao.help_text }}</small>
+                            </div>
+                            <div class="mb-3">
+                                <label for="{{ service_form.preco.id_for_label }}" class="form-label">{{ service_form.preco.label }}</label>
+                                {{ service_form.preco.errors }}
+                                {{ service_form.preco }}
+                            </div>
+                            <div class="mb-3">
+                                <label for="{{ service_form.descricao.id_for_label }}" class="form-label">{{ service_form.descricao.label }}</label>
+                                {{ service_form.descricao.errors }}
+                                {{ service_form.descricao }}
+                            </div>
+                            
+                            <button type="submit" name="submit_service" class="btn btn-primary w-100">Criar Serviço</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+            <!-- Lista -->
+            <div class="col-md-6 mb-4">
+                <div class="card shadow-sm border-0">
+                    <div class="card-header">
+                        <h5 class="mb-0">Serviços Globais (Disponíveis)</h5>
+                    </div>
+                    <div class="card-body">
+                        {% if servicos_globais %}
+                            <ul class="list-group list-group-flush">
+                                {% for service in servicos_globais %}
+                                    <li class="list-group-item d-flex justify-content-between align-items-center px-0">
+                                        {{ service.nome }}
+                                        <span class="badge bg-dark rounded-pill">{{ service.friendly_duration }}</span>
+                                    </li>
+                                {% endfor %}
+                            </ul>
+                        {% else %}
+                            <div class="alert alert-secondary p-2">Nenhum serviço cadastrado.</div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
 </div>
 {% endblock %}
